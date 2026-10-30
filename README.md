@@ -4,7 +4,7 @@ A web platform for publishing and reading books, focused on supporting amateur l
 
 The project will be built with **Java, Spring Boot, Angular, TypeScript, and PostgreSQL**, featuring a responsive Portuguese-language interface and free publishing as its initial offering.
 
-> **Status:** planning and architecture definition. The features, structure, and commands in this document describe the project to be implemented; they do not represent completed deliveries.
+> **Status:** the backend foundation is implemented (data model, migrations, base security, error handling); business endpoints are not. See [backend/readowl/README.md](backend/readowl/README.md) for what runs today and [docs/backend-api-contract.md](docs/backend-api-contract.md) for the current HTTP contract. Unless stated otherwise, the features and commands in this document describe the project to be implemented.
 
 ---
 
@@ -91,12 +91,11 @@ The MVP will include accounts, publishing, reading, catalog, library, comments, 
 | Technology | Purpose |
 | --- | --- |
 | Java 25 LTS | Main backend language |
-| Spring Boot 4.1.1 | Application configuration and runtime |
+| Spring Boot 4.1.2 | Application configuration and runtime |
 | Spring MVC | REST API under `/api/v1` |
 | Spring Security | Authentication and authorization |
 | Spring OAuth2 Client | Google sign-in through OpenID Connect |
-| Spring Session JDBC | Proposed initial session store in PostgreSQL |
-| Spring Session Data Redis | Included alternative session store; requires an explicit selection |
+| Spring Session JDBC | Session store in PostgreSQL |
 | Spring Data JPA / Hibernate | Persistence and transactions |
 | Jakarta Bean Validation | DTO validation |
 | Flyway | Versioned database migrations |
@@ -115,7 +114,7 @@ The supplied `pom.xml` establishes the following configuration:
 | Setting | Value |
 | --- | --- |
 | Build tool | Maven |
-| Parent | `org.springframework.boot:spring-boot-starter-parent:4.1.1` |
+| Parent | `org.springframework.boot:spring-boot-starter-parent:4.1.2` |
 | Group ID | `br.com.readowl` |
 | Artifact ID | `readowl` |
 | Application version | `0.0.1-SNAPSHOT` |
@@ -140,7 +139,6 @@ Unless stated otherwise, Spring Boot artifacts below use the `org.springframewor
 | `spring-boot-starter-mail` | Email integration |
 | `spring-boot-starter-security` | Authentication, authorization, and CSRF |
 | `spring-boot-starter-security-oauth2-client` | OAuth2 / OpenID Connect client support |
-| `spring-boot-starter-session-data-redis` | Redis-backed session support |
 | `spring-boot-starter-session-jdbc` | JDBC-backed session support |
 | `spring-boot-starter-validation` | Jakarta Bean Validation |
 | `spring-boot-starter-webmvc` | Servlet-based REST API |
@@ -156,7 +154,6 @@ The POM also includes these test-scoped dependencies:
 - `spring-boot-starter-mail-test`
 - `spring-boot-starter-security-oauth2-client-test`
 - `spring-boot-starter-security-test`
-- `spring-boot-starter-session-data-redis-test`
 - `spring-boot-starter-session-jdbc-test`
 - `spring-boot-starter-validation-test`
 - `spring-boot-starter-webmvc-test`
@@ -164,15 +161,11 @@ The POM also includes these test-scoped dependencies:
 - `org.testcontainers:testcontainers-junit-jupiter`
 - `org.testcontainers:testcontainers-postgresql`
 
-Dependency declarations provide tooling support; they do not mean the corresponding features or tests have been implemented. S3 integration, HTML sanitization, OpenAPI tooling, and any additional cryptographic provider required by the selected Argon2id implementation are not declared in the supplied POM and remain implementation tasks.
+Dependency declarations provide tooling support; they do not mean the corresponding features or tests have been implemented. S3 integration and the cryptographic provider required by the selected Argon2id implementation are not declared in the POM and remain implementation tasks.
 
-### Session Store Selection
+### Session Store
 
-The supplied POM includes **both JDBC and Redis session starters**. This does not define a dual-write session architecture, synchronization, or automatic failover. Exactly one active session repository must be selected and configured before authentication is implemented.
-
-The initial architecture proposal remains JDBC sessions in PostgreSQL. For that configuration, remove the Redis session starter and its corresponding test starter from the POM. If Redis sessions are selected instead, remove the JDBC session starter and its test counterpart, provision Redis as a required service, and update the session configuration and operational documentation.
-
-Do not rely on implicit auto-configuration precedence when both starters are present. Redis availability is optional only when it is not the selected session store. Introducing Redis for rate limiting or caching later does not require enabling Redis-backed sessions.
+Sessions are stored in PostgreSQL through Spring Session JDBC, the only session starter in the POM. Introducing Redis later for rate limiting or caching does not require Redis-backed sessions.
 
 ### Frontend
 
@@ -203,7 +196,7 @@ The editor will be encapsulated in a dedicated component. Angular integration, S
 | Redis, as needed | Distributed limits, deduplication, and caching |
 | Transactional email service | Verification and account recovery delivery |
 
-Redis is already represented in the POM through its session starter, but whether a Redis server is required depends on the selected session repository. With the proposed JDBC-only session configuration, Redis can remain optional for future distributed limits, deduplication, and caching. With Redis-backed sessions, it becomes a required runtime service. Security controls must not silently disappear during failures.
+Redis is not part of the current stack and is not required at runtime. It may be introduced for distributed limits, deduplication, or caching when a need is demonstrated. Security controls must not silently disappear during failures.
 
 ### Infrastructure and Quality
 
@@ -214,12 +207,12 @@ Redis is already represented in the POM through its session starter, but whether
 - JUnit and Testcontainers integration tests for the backend.
 - Component tests using tools compatible with the selected Angular version.
 - Playwright for end-to-end tests.
-- OpenAPI for API contract documentation.
+- API contract maintained in Markdown ([docs/backend-api-contract.md](docs/backend-api-contract.md)).
 - ESLint and Prettier for the frontend; Java formatting standards enforced during the build.
 
 ### Version Policy
 
-The backend POM already pins Spring Boot to **4.1.1** and the Java target to **25**. At milestone M0, the exact JDK distribution and patch, Maven Wrapper version, Angular, Node.js, TypeScript, PostgreSQL, and remaining dependencies will be pinned. Node.js 24 LTS is the proposed initial line for builds and SSR, subject to Angular's compatibility matrix.
+The backend POM pins Spring Boot to **4.1.2** and requires Java **25**. At milestone M0, the exact JDK distribution and patch, Maven Wrapper version, Angular, Node.js, TypeScript, PostgreSQL, and remaining dependencies will be pinned. Node.js 24 LTS is the proposed initial line for builds and SSR, subject to Angular's compatibility matrix.
 
 The repository will include Maven Wrapper, a frontend lockfile, and versioned container images. Production will not rely on `latest` tags.
 
@@ -231,15 +224,18 @@ The backend will be a **modular monolith**, organized by feature. The frontend a
 
 | Module | Responsibility |
 | --- | --- |
-| Accounts | Registration, authentication, recovery, and profiles |
-| Catalog | Books, genres, tags, and discovery |
-| Publishing | Volumes, chapters, drafts, and revisions |
-| Library | Followed works and reading progress |
-| Community | Comments, ratings, and reactions |
-| Notifications | Internal alerts and email delivery |
-| Moderation | Reports and actions on accounts and content |
-| Media | Image uploads and processing |
-| Statistics | Recording and querying chapter views |
+| `user` | Users, roles, and public profiles |
+| `auth` | Registration, authentication, sessions, and recovery |
+| `genre` | Genres and tags |
+| `book` | Books and discovery |
+| `publishing` | Volumes, chapters, drafts, and revisions |
+| `library` | Followed works and reading progress |
+| `community` | Comments, ratings, reactions, and chapter views |
+| `banner` | Home page banners |
+| `notification` | Internal alerts and email delivery |
+| `moderation` | Reports and actions on accounts and content |
+| `media` | Image uploads and processing |
+| `shared` | Cross-cutting configuration, errors, and security |
 
 Each module will organize its endpoints, use cases, domain rules, and persistence. JPA entities will not be exposed directly through the API. DTOs will define input and output data.
 
@@ -325,7 +321,7 @@ SSR will not record views. The browser will submit the event after opening the c
 
 ### Authentication
 
-- Server-side sessions with one explicitly selected repository; JDBC in PostgreSQL is the initial proposal. The supplied POM includes JDBC and Redis alternatives and requires cleanup or explicit repository configuration before use.
+- Server-side sessions stored in PostgreSQL through Spring Session JDBC.
 - HttpOnly session cookie, Secure in production, and SameSite=Lax, without a Domain attribute.
 - Session identifier rotation on login and revocation on logout.
 - Inactivity timeouts, maximum lifetime, and a stay-signed-in option will be defined before implementation.
@@ -409,17 +405,19 @@ The reading experience will be validated with long chapters and mobile devices, 
 
 ```text
 readowl/
-├── backend/
-│   ├── src/main/java/br/com/readowl/
-│   │   ├── accounts/
-│   │   ├── catalog/
+├── backend/readowl/
+│   ├── src/main/java/br/com/readowl/readowl/
+│   │   ├── auth/
+│   │   ├── user/
+│   │   ├── genre/
+│   │   ├── book/
 │   │   ├── publishing/
 │   │   ├── library/
 │   │   ├── community/
-│   │   ├── notifications/
+│   │   ├── banner/
+│   │   ├── notification/
 │   │   ├── moderation/
 │   │   ├── media/
-│   │   ├── statistics/
 │   │   └── shared/
 │   ├── src/main/resources/
 │   │   └── db/migration/
@@ -496,29 +494,11 @@ Compose will provide PostgreSQL, S3-compatible storage, and a local email inbox.
 docker compose up -d postgres object-storage mailpit
 ```
 
-Optional services can be started through profiles. If Redis-backed sessions are selected, the Compose scaffold must also provide and start a required `redis` service. Development ports will bind to localhost where possible.
+Optional services can be started through profiles. Development ports will bind to localhost where possible.
 
 ### 4. Verify and Start the Backend
 
-The supplied POM is a backend build configuration, not a complete runnable environment. Before starting, configure the PostgreSQL data source, select one session repository, define required migrations, and provide the applicable email and OAuth2 settings. Installing dependencies alone does not configure these services.
-
-Verify that Maven uses Java 25:
-
-```bash
-cd backend
-./mvnw -v
-```
-
-From the `backend` directory, the planned build command is `./mvnw clean verify`. The executable artifact is expected at `target/readowl-0.0.1-SNAPSHOT.jar`; once configured, it can run with `java -jar target/readowl-0.0.1-SNAPSHOT.jar`.
-
-
-With local variables loaded through the mechanism defined in the scaffold, from the `backend` directory:
-
-```bash
-./mvnw spring-boot:run -Dspring-boot.run.profiles=dev
-```
-
-On Windows, use `mvnw.cmd`. Flyway migrations will run according to the environment configuration.
+Follow [backend/readowl/README.md](backend/readowl/README.md), which documents the implemented setup: database creation, the `.env` file, and the build, test, and run commands.
 
 ### 5. Start the Frontend
 
@@ -550,7 +530,7 @@ Development emails will be captured by the local inbox. Demo data will be restri
 
 ### Backend
 
-The POM includes dedicated Spring Boot test starters and PostgreSQL Testcontainers integration. Docker must be available for container-based integration tests. Test classes and their configuration still need to be implemented.
+Integration tests run against real PostgreSQL, either a dedicated local database or Testcontainers, which requires Docker. See [backend/readowl/README.md](backend/readowl/README.md).
 
 - Domain rule and use case tests.
 - Integration tests with real PostgreSQL through Testcontainers.
@@ -558,10 +538,10 @@ The POM includes dedicated Spring Boot test starters and PostgreSQL Testcontaine
 - Transactional publishing, editing conflicts, and view deduplication.
 - Migration validation on an empty database and upgrades to an existing database.
 
-Planned command:
+Command:
 
 ```bash
-cd backend
+cd backend/readowl
 ./mvnw verify
 ```
 

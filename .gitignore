@@ -1,0 +1,3 @@
+# Regras do frontend e do backend ficam nos .gitignore de cada projeto.
+backend/.idea/
+.env

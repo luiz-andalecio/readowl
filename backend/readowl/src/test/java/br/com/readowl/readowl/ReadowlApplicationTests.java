@@ -1,15 +1,22 @@
 package br.com.readowl.readowl;
 
+import br.com.readowl.readowl.support.IntegrationTest;
 import org.junit.jupiter.api.Test;
-import org.springframework.boot.test.context.SpringBootTest;
-import org.springframework.context.annotation.Import;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.session.SessionRepository;
+import org.springframework.session.jdbc.JdbcIndexedSessionRepository;
 
-@Import(TestcontainersConfiguration.class)
-@SpringBootTest
+import static org.assertj.core.api.Assertions.assertThat;
+
+@IntegrationTest
 class ReadowlApplicationTests {
 
+	@Autowired
+	private SessionRepository<?> sessionRepository;
+
 	@Test
-	void contextLoads() {
+	void contextLoadsWithJdbcSessions() {
+		assertThat(sessionRepository).isInstanceOf(JdbcIndexedSessionRepository.class);
 	}
 
 }
