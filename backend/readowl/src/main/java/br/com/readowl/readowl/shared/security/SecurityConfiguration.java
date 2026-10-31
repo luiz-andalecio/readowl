@@ -56,7 +56,9 @@ class SecurityConfiguration {
                                 "/api/v1/books/{bookId}/comments",
                                 "/api/v1/books/{bookId}/rating",
                                 "/api/v1/chapters/{chapterId}/comments",
-                                "/api/v1/chapters/{chapterId}/reactions").permitAll()
+                                "/api/v1/chapters/{chapterId}/reactions",
+                                "/api/v1/comments/{commentId}/replies",
+                                "/api/v1/banners").permitAll()
                         .requestMatchers(HttpMethod.POST,
                                 "/api/v1/auth/register",
                                 "/api/v1/auth/verify-email",

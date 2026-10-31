@@ -1,6 +1,7 @@
 package br.com.readowl.readowl.community.api;
 
 import br.com.readowl.readowl.community.application.ChapterViewService;
+import br.com.readowl.readowl.community.application.CommentLikeService;
 import br.com.readowl.readowl.community.application.CommentService;
 import br.com.readowl.readowl.community.application.CommentService.CommentResponse;
 import br.com.readowl.readowl.community.application.RatingService;
@@ -32,6 +33,7 @@ import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestController;
 
+import java.util.List;
 import java.util.Set;
 import java.util.UUID;
 
@@ -40,13 +42,15 @@ import java.util.UUID;
 class CommunityController {
 
     private final CommentService comments;
+    private final CommentLikeService commentLikes;
     private final RatingService ratings;
     private final ReactionService reactions;
     private final ChapterViewService views;
 
-    CommunityController(CommentService comments, RatingService ratings, ReactionService reactions,
-                        ChapterViewService views) {
+    CommunityController(CommentService comments, CommentLikeService commentLikes, RatingService ratings,
+                        ReactionService reactions, ChapterViewService views) {
         this.comments = comments;
+        this.commentLikes = commentLikes;
         this.ratings = ratings;
         this.reactions = reactions;
         this.views = views;
@@ -89,6 +93,39 @@ class CommunityController {
     CommentResponse commentOnChapter(@AuthenticationPrincipal SessionUser principal, @PathVariable UUID chapterId,
                                      @Valid @RequestBody CommentRequest body, HttpServletRequest request) {
         return comments.commentOnChapter(chapterId, body.content(), principal, request.getRemoteAddr());
+    }
+
+    @GetMapping("/comments/{commentId}/replies")
+    PageResponse<CommentResponse> replies(@PathVariable UUID commentId,
+                                          @RequestParam(defaultValue = "0") int page,
+                                          @RequestParam(defaultValue = "20") int size,
+                                          @RequestParam(defaultValue = "createdAt") String sort) {
+        return comments.listReplies(commentId, commentPage(page, size, sort));
+    }
+
+    @PostMapping("/comments/{commentId}/replies")
+    @ResponseStatus(HttpStatus.CREATED)
+    CommentResponse reply(@AuthenticationPrincipal SessionUser principal, @PathVariable UUID commentId,
+                          @Valid @RequestBody CommentRequest body, HttpServletRequest request) {
+        return comments.reply(commentId, body.content(), principal, request.getRemoteAddr());
+    }
+
+    @PutMapping("/comments/{commentId}/like")
+    CommentLikeService.LikeState like(@AuthenticationPrincipal SessionUser principal, @PathVariable UUID commentId,
+                                      HttpServletRequest request) {
+        return commentLikes.like(commentId, principal, request.getRemoteAddr());
+    }
+
+    @DeleteMapping("/comments/{commentId}/like")
+    @ResponseStatus(HttpStatus.NO_CONTENT)
+    void unlike(@AuthenticationPrincipal SessionUser principal, @PathVariable UUID commentId) {
+        commentLikes.unlike(commentId, principal);
+    }
+
+    @GetMapping("/users/me/liked-comments")
+    CommentLikeService.LikedComments likedComments(@AuthenticationPrincipal SessionUser principal,
+                                                   @RequestParam List<UUID> commentIds) {
+        return commentLikes.likedAmong(commentIds, principal);
     }
 
     @PatchMapping("/comments/{commentId}")

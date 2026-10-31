@@ -677,15 +677,15 @@ Limites por minuto, além dos quais a resposta é 429 `RATE_LIMITED`:
 
 | Ação | Por conta | Por IP |
 |---|---|---|
-| Criar ou editar comentário | 10 | 60 |
-| Avaliar ou reagir | 60 | 300 |
+| Criar, responder ou editar comentário | 10 | 60 |
+| Avaliar, reagir ou curtir | 60 | 300 |
 | Registrar visita | 120 | 600 |
 
 ### Comentários
 
 **O conteúdo é texto puro e pode conter qualquer coisa, inclusive `<script>`. Exiba-o sempre como texto, nunca com `innerHTML`.** As quebras de linha são preservadas.
 
-`GET /books/{bookId}/comments` e `GET /chapters/{chapterId}/comments` são públicos e paginados. A lista da obra não inclui os comentários dos capítulos. `sort`: `createdAt`, com padrão `-createdAt`.
+`GET /books/{bookId}/comments` e `GET /chapters/{chapterId}/comments` são públicos e paginados, e trazem só comentários principais. A lista da obra não inclui os comentários dos capítulos. `sort`: `createdAt`, com padrão `-createdAt`.
 
 **200**, com `content` neste formato:
 ```json
@@ -693,13 +693,19 @@ Limites por minuto, além dos quais a resposta é 429 `RATE_LIMITED`:
   "id": "019f...",
   "bookId": "019f...",
   "chapterId": null,
+  "parentId": null,
   "content": "Gostei muito!\nQuando sai o próximo?",
   "author": { "username": "maria-leitora", "name": "Maria Leitora" },
+  "removed": false,
   "edited": false,
+  "replyCount": 2,
+  "likeCount": 5,
   "createdAt": "2026-10-31T19:32:15.393101Z",
   "updatedAt": "2026-10-31T19:32:15.393101Z"
 }
 ```
+
+**Trate `content` e `author` como opcionais.** Um comentário principal excluído, oculto ou de conta suspensa que ainda tem respostas continua na lista com `removed: true`, `content: null` e `author: null`, para não sumir com a conversa. Mostre algo como "Comentário removido". Sem respostas visíveis, ele não aparece.
 
 `POST /books/{bookId}/comments` e `POST /chapters/{chapterId}/comments` criam um comentário. **201**, com o corpo acima.
 
@@ -719,6 +725,41 @@ Limites por minuto, além dos quais a resposta é 429 `RATE_LIMITED`:
 | 403 | `ACCESS_DENIED` | O comentário é de outra pessoa |
 | 404 | `COMMENT_NOT_FOUND` | Inexistente, já excluído ou fora do ar |
 | 409 | `DUPLICATE_COMMENT` | O usuário enviou o mesmo texto no mesmo lugar há menos de 10 minutos |
+
+### Respostas
+
+Têm um nível só: não há resposta de resposta. A obra e o capítulo vêm do comentário respondido.
+
+`GET /comments/{id}/replies` é público e paginado, das mais antigas para as mais recentes por padrão. `sort`: `createdAt`. Funciona mesmo se o comentário principal foi removido. **200**, no formato acima, com `parentId` preenchido.
+
+`POST /comments/{id}/replies` responde com o mesmo corpo de um comentário. **201**, no formato acima. As regras de `PATCH` e `DELETE` são as mesmas, em `/comments/{id da resposta}`.
+
+| Status | `code` | Quando |
+|---|---|---|
+| 400 | `NESTED_REPLY` | O comentário informado já é uma resposta |
+| 404 | `COMMENT_NOT_FOUND` | Inexistente, removido ou fora do ar. Comentários removidos não aceitam novas respostas |
+
+### Curtidas
+
+Valem para comentários e respostas. Cada pessoa curte uma vez, e ninguém curte o próprio comentário.
+
+`PUT /comments/{id}/like` curte. Envie um corpo vazio. Repetir não é erro. **200**:
+```json
+{ "liked": true, "likeCount": 6 }
+```
+
+`DELETE /comments/{id}/like` remove a curtida, mesmo com o comentário fora do ar. Repetir não é erro. **204**, sem corpo.
+
+`GET /users/me/liked-comments?commentIds=019f...,019f...` diz quais dos comentários informados, até 50, a pessoa curtiu. As listas públicas não trazem isso porque não têm dados pessoais. **200**:
+```json
+{ "commentIds": ["019f..."] }
+```
+
+| Status | `code` | Quando |
+|---|---|---|
+| 400 | `TOO_MANY_IDS` | Mais de 50 comentários na consulta |
+| 403 | `OWN_COMMENT_LIKE` | O comentário é da própria pessoa |
+| 404 | `COMMENT_NOT_FOUND` | Inexistente, removido ou fora do ar |
 
 ### Avaliações
 
@@ -779,6 +820,79 @@ Registra que o usuário abriu o capítulo. Envie um corpo vazio. **204**, sem co
 **Chame no navegador, depois de abrir o capítulo e só com o usuário logado.** O SSR não registra visitas, e abrir a rota de leitura não conta nada. Visitantes recebem 401.
 
 O servidor decide o que conta: uma visita por usuário e capítulo a cada 2 minutos, e nunca as do autor da obra. O total da obra é público em `viewCount`. O total de cada capítulo só aparece em `GET /books/{id}/contents`, para o autor e a administração.
+
+## Banners
+
+### `GET /banners`
+
+Banners ativos da página inicial, por `position`. Público, sem paginação. Um banner é ativo se está ligado e dentro do período. **200**:
+```json
+[{
+  "id": "019f...",
+  "name": "Novidades de outubro",
+  "imageUrl": "https://cdn.example.com/outubro.png",
+  "linkUrl": "https://readowl.example.com/obras/sra-shihais",
+  "position": 1
+}]
+```
+
+### Administração
+
+Para `ADMIN` e `ROOT`. Até a etapa de mídia, as imagens são endereços externos.
+
+| Endpoint | O que faz |
+|---|---|
+| `GET /admin/banners` | Todos os banners, paginados. `sort`: `position`, `name` ou `createdAt`. O padrão é `position` |
+| `GET /admin/banners/{id}` | Um banner |
+| `POST /admin/banners` | Cria. **201** |
+| `PUT /admin/banners/{id}` | Substitui todos os campos, com `version`. **200** |
+| `DELETE /admin/banners/{id}` | Exclui. **204** |
+
+```json
+{
+  "version": 0,
+  "name": "Novidades de outubro",
+  "imageUrl": "https://cdn.example.com/outubro.png",
+  "linkUrl": "https://readowl.example.com/obras/sra-shihais",
+  "position": 1,
+  "enabled": true,
+  "activeFrom": "2026-10-01T00:00:00Z",
+  "activeUntil": null
+}
+```
+
+| Campo | Regra |
+|---|---|
+| `version` | Só em `PUT`: a versão lida |
+| `name` | Até 200 caracteres, não vazio |
+| `imageUrl`, `linkUrl` | Até 1000 caracteres, sempre `https://` com o endereço completo |
+| `position` | A partir de 0. Pode repetir |
+| `enabled` | Obrigatório |
+| `activeFrom`, `activeUntil` | Opcionais. Sem um deles, o período fica em aberto naquele lado |
+
+**200** ou **201**:
+```json
+{
+  "id": "019f...",
+  "name": "Novidades de outubro",
+  "imageUrl": "https://cdn.example.com/outubro.png",
+  "linkUrl": "https://readowl.example.com/obras/sra-shihais",
+  "position": 1,
+  "enabled": true,
+  "activeFrom": "2026-10-01T00:00:00Z",
+  "activeUntil": null,
+  "version": 0,
+  "createdAt": "2026-10-31T19:32:15.393101Z",
+  "updatedAt": "2026-10-31T19:32:15.393101Z"
+}
+```
+
+| Status | `code` | Quando |
+|---|---|---|
+| 400 | `INVALID_BANNER_URL` | O endereço não é `https://` completo |
+| 400 | `INVALID_BANNER_PERIOD` | O fim não é depois do início |
+| 404 | `BANNER_NOT_FOUND` | Inexistente |
+| 409 | `BANNER_CONFLICT` | Outra pessoa alterou o banner. A resposta traz `currentVersion` |
 
 ## Notificações
 
@@ -932,7 +1046,7 @@ Suspender contas não é uma ação de moderação: é edição de usuário, exc
 
 ### `GET /moderation/comments`
 
-Todos os comentários de uma obra (`?bookId=`, inclusive os dos capítulos) ou de uma pessoa (`?userId=`), inclusive excluídos, ocultos e de obras fora do ar. Informe exatamente um dos dois, ou recebe 400 `INVALID_FILTER`. Paginada. `sort`: `createdAt`, com padrão `-createdAt`.
+Todos os comentários de uma obra (`?bookId=`, inclusive os dos capítulos) ou de uma pessoa (`?userId=`), inclusive respostas, excluídos, ocultos e de obras fora do ar. Informe exatamente um dos dois, ou recebe 400 `INVALID_FILTER`. Paginada. `sort`: `createdAt`, com padrão `-createdAt`.
 
 **200**, com `content` neste formato:
 ```json
@@ -940,6 +1054,7 @@ Todos os comentários de uma obra (`?bookId=`, inclusive os dos capítulos) ou d
   "id": "019f...",
   "bookId": "019f...",
   "chapterId": null,
+  "parentId": null,
   "content": "Texto",
   "author": { "id": "019f...", "username": "joao", "name": "João" },
   "deletedAt": null,
@@ -1202,7 +1317,9 @@ Nada disso foi alterado no projeto Angular.
 | Imagens | Tratar obra e perfil sem capa ou avatar até a etapa de mídia |
 | Editor | Adotar o Tiptap com as extensões da [lista do formato](#formato-do-documento-versão-1). Ele ainda não está no `package.json` |
 | Leitura | Estilizar as classes `text-left`, `text-center`, `text-right` e `text-justify` |
-| Comentários | Exibir como texto, sem `innerHTML`, preservando as quebras de linha |
+| Comentários | Exibir como texto, sem `innerHTML`, preservando as quebras de linha. Tratar `removed: true`, sem texto nem autor |
+| Curtidas | Depois de carregar uma lista, consultar `GET /users/me/liked-comments`, só com o usuário logado |
+| Banners | Os endereços vêm de administradores e são externos: considerar a política de imagens do site |
 | Visitas | Chamar `POST /chapters/{id}/views` no navegador ao abrir um capítulo, só com o usuário logado |
 | Notificações | Consultar `GET /notifications/unread-count` periodicamente, só com o usuário logado |
 | E-mail de capítulo novo | Ter a página `/obras/{slug da obra}/capitulos/{slug do capítulo}` e a opção `emailNewChapters` em `/conta` |
@@ -1216,4 +1333,4 @@ Nada disso foi alterado no projeto Angular.
 
 Estes grupos ainda não existem e seus caminhos podem mudar:
 
-- **Depois do núcleo:** respostas e curtidas em comentários, banners, upload de imagens.
+- **Mídia:** upload de imagens de capa, avatar e banner. Depende de aprovação para adicionar o armazenamento S3.

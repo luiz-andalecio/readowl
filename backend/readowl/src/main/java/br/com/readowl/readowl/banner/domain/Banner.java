@@ -43,12 +43,18 @@ public class Banner extends BaseEntity {
 
     private Instant activeUntil;
 
-    public Banner(String name, String imageUrl, String linkUrl, int position,
+    public Banner(String name, String imageUrl, String linkUrl, int position, boolean enabled,
                   Instant activeFrom, Instant activeUntil) {
+        update(name, imageUrl, linkUrl, position, enabled, activeFrom, activeUntil);
+    }
+
+    public final void update(String name, String imageUrl, String linkUrl, int position, boolean enabled,
+                             Instant activeFrom, Instant activeUntil) {
         this.name = name;
         this.imageUrl = imageUrl;
         this.linkUrl = linkUrl;
         this.position = position;
+        this.enabled = enabled;
         this.activeFrom = activeFrom;
         this.activeUntil = activeUntil;
     }

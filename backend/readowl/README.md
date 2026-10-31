@@ -2,7 +2,7 @@
 
 API REST da plataforma Readowl, em Java 25 e Spring Boot 4.1.2, com PostgreSQL 18.
 
-> **Estado atual: contas, publicação, leitura, comunidade e operação.** Além da fundação (modelo de dados, migrations, erros e segurança base), já funcionam contas, login, recuperação de senha, login com Google, perfil, obras, gêneros, tags, volumes, capítulos, rascunhos, publicação, administração, leitura pública, catálogo com busca, biblioteca, comentários, avaliações, reações, visualizações, notificações, denúncias, moderação e auditoria. O contrato HTTP vigente está em [docs/backend-api-contract.md](../../docs/backend-api-contract.md).
+> **Estado atual: contas, publicação, leitura, comunidade e operação.** Além da fundação (modelo de dados, migrations, erros e segurança base), já funcionam contas, login, recuperação de senha, login com Google, perfil, obras, gêneros, tags, volumes, capítulos, rascunhos, publicação, administração, leitura pública, catálogo com busca, biblioteca, comentários com respostas e curtidas, avaliações, reações, visualizações, notificações, denúncias, moderação, auditoria e banners. O upload de imagens ainda não existe. O contrato HTTP vigente está em [docs/backend-api-contract.md](../../docs/backend-api-contract.md).
 
 ## Pré-requisitos
 
@@ -143,6 +143,8 @@ Os testes de integração usam PostgreSQL real, de duas formas:
 | `NotificationIntegrationTest` | Outbox, reprocessamento, workers simultâneos, tentativas limitadas, leitura por usuário, e-mails com consentimento |
 | `ModerationIntegrationTest` | Permissões por papel, denúncias sem repetição, cópia do conteúdo, ocultar e restaurar, bloqueio de republicação |
 | `AuditLogIntegrationTest` | O que é registrado e o que não é, antes e depois, resultado, correlação, ausência de textos privados |
+| `CommentThreadIntegrationTest` | Respostas de um nível, comentários removidos que mantêm a conversa, curtidas únicas, concorrência |
+| `BannerIntegrationTest` | Período e status, permissões, endereços só HTTPS, conflito de edição, auditoria |
 
 Os testes de API usam servidor HTTP real, cookies reais e sessões no PostgreSQL. Só o `MailSender` é substituído. O Google é simulado por um servidor local com ID tokens assinados, então **o fluxo com o Google real depende de credenciais e ainda precisa ser conferido manualmente**.
 
@@ -203,6 +205,8 @@ As dependências seguem uma direção, sem ciclos: `publishing` e `library` conh
 - **Visualizações:** um único comando SQL (`ChapterViewRepository.count`) decide e incrementa, o que mantém a contagem correta entre instâncias. Ele altera a obra antes do capítulo, na mesma ordem da publicação, para evitar deadlocks. Não altera `version`, então uma visita não causa conflito na edição do autor. Nenhum IP é guardado.
 - **Avaliações e reações:** gravadas por upsert e sempre somadas a partir das linhas, sem contadores que possam divergir. O cliente só envia a própria nota ou reação.
 - **Comentários:** texto puro, exibido pelo frontend sem interpretar HTML. A exclusão é lógica, e o texto fica para a moderação. A checagem de repetição usa um bloqueio consultivo por usuário, liberado ao fim da transação.
+- **Respostas:** têm um nível, verificado no serviço. Um comentário principal removido fica na lista sem texto nem autor enquanto tiver respostas visíveis.
+- **Curtidas:** gravadas por upsert e somadas a partir das linhas, com uma consulta por página. As listas públicas não dizem quem curtiu; o estado pessoal fica em `/users/me/liked-comments`, para não entrar em cache público.
 
 ### Operação
 

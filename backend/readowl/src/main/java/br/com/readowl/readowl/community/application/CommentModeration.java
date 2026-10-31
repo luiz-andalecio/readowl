@@ -29,20 +29,22 @@ public class CommentModeration {
     public record ModeratedCommentAuthor(UUID id, String username, String name) {
     }
 
-    public record ModeratedComment(UUID id, UUID bookId, UUID chapterId, String content, ModeratedCommentAuthor author,
-                                   Instant deletedAt, Instant moderatedAt, Instant createdAt, Instant updatedAt) {
+    public record ModeratedComment(UUID id, UUID bookId, UUID chapterId, UUID parentId, String content,
+                                   ModeratedCommentAuthor author, Instant deletedAt, Instant moderatedAt,
+                                   Instant createdAt, Instant updatedAt) {
 
         static ModeratedComment from(Comment comment) {
             User author = comment.getUser();
             return new ModeratedComment(comment.getId(), comment.getBook().getId(),
-                    comment.getChapter() == null ? null : comment.getChapter().getId(), comment.getContent(),
+                    comment.getChapter() == null ? null : comment.getChapter().getId(),
+                    comment.getParent() == null ? null : comment.getParent().getId(), comment.getContent(),
                     new ModeratedCommentAuthor(author.getId(), author.getUsername(), author.getName()),
                     comment.getDeletedAt(), comment.getModeratedAt(), comment.getCreatedAt(), comment.getUpdatedAt());
         }
     }
 
     /**
-     * Inclui comentários de capítulos, excluídos e de obras fora do ar.
+     * Inclui respostas, comentários de capítulos, excluídos e de obras fora do ar.
      */
     public PageResponse<ModeratedComment> listOnBook(UUID bookId, Pageable pageable) {
         return PageResponse.from(comments.findAllOnBook(bookId, pageable).map(ModeratedComment::from));
