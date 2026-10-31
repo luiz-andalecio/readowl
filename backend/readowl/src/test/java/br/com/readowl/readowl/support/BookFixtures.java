@@ -74,6 +74,18 @@ public final class BookFixtures {
                 .isEqualTo(200);
     }
 
+    /**
+     * Obra pública com os dados informados, para testes de catálogo e leitura.
+     */
+    public String publishedBook(ApiClient author, Map<String, Object> data) {
+        ApiClient.Response created = author.post("/api/v1/books", data);
+        assertThat(created.status()).isEqualTo(201);
+        String bookId = created.json().at("/id").asString();
+        publishChapter(author, createChapter(author, bookId, "Capítulo 1"), "Era uma vez.");
+        assertThat(author.post("/api/v1/books/" + bookId + "/publish", body()).status()).isEqualTo(200);
+        return bookId;
+    }
+
     public String publishedBook(ApiClient author) {
         String bookId = createBook(author);
         publishChapter(author, createChapter(author, bookId, "Capítulo 1"), "Era uma vez.");

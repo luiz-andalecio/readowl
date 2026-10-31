@@ -7,7 +7,10 @@ import br.com.readowl.readowl.support.ApiIntegrationTest;
 import br.com.readowl.readowl.support.RecordingMailSender;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.boot.test.system.CapturedOutput;
+import org.springframework.boot.test.system.OutputCaptureExtension;
 import org.springframework.boot.test.web.server.LocalServerPort;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.jdbc.core.JdbcTemplate;
@@ -26,6 +29,7 @@ import static br.com.readowl.readowl.support.ApiClient.body;
 import static org.assertj.core.api.Assertions.assertThat;
 
 @ApiIntegrationTest
+@ExtendWith(OutputCaptureExtension.class)
 class RegistrationIntegrationTest {
 
     private static final String REGISTER = "/api/v1/auth/register";
@@ -162,7 +166,7 @@ class RegistrationIntegrationTest {
     }
 
     @Test
-    void simultaneousRegistrationsOfTheSameEmailCreateOneAccount() {
+    void simultaneousRegistrationsOfTheSameEmailCreateOneAccountAndKeepTheEmailOutOfTheLogs(CapturedOutput output) {
         String email = uniqueEmail();
 
         List<CompletableFuture<ApiClient.Response>> requests = List.of(
@@ -172,6 +176,7 @@ class RegistrationIntegrationTest {
 
         assertThat(requests).allSatisfy(request -> assertThat(request.join().status()).isEqualTo(202));
         assertThat(jdbc.queryForObject("SELECT count(*) FROM users WHERE email = ?", Integer.class, email)).isEqualTo(1);
+        assertThat(output.getAll()).doesNotContain(email);
     }
 
     @Test

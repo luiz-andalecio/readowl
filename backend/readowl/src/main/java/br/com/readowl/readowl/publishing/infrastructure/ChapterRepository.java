@@ -6,12 +6,37 @@ import org.springframework.data.jpa.repository.EntityGraph;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
 
+import java.time.Instant;
 import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 
 public interface ChapterRepository extends JpaRepository<Chapter, UUID> {
+
+    /**
+     * Linha do índice público: não carrega o texto das revisões.
+     */
+    record PublishedChapterRow(UUID id, String title, String slug, UUID volumeId, String volumeTitle,
+                               Instant publishedAt) {
+    }
+
+    /**
+     * Ordem de leitura: primeiro os capítulos sem volume, depois cada volume em ordem.
+     */
+    @Query("""
+            select new br.com.readowl.readowl.publishing.infrastructure.ChapterRepository$PublishedChapterRow(
+                c.id, c.title, c.slug, v.id, v.title, r.createdAt)
+            from Chapter c left join c.volume v join c.publishedRevision r
+            where c.book.id = :bookId and c.state = br.com.readowl.readowl.publishing.domain.ChapterState.PUBLISHED
+            order by v.displayOrder asc nulls first, c.displayOrder asc
+            """)
+    List<PublishedChapterRow> findPublishedRows(UUID bookId);
+
+    @EntityGraph(attributePaths = {"publishedRevision", "volume"})
+    Optional<Chapter> findWithRevisionByBookIdAndSlug(UUID bookId, String slug);
+
+    Optional<Chapter> findByIdAndBookId(UUID id, UUID bookId);
 
     @EntityGraph(attributePaths = "volume")
     List<Chapter> findByBookIdOrderByDisplayOrder(UUID bookId);

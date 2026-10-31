@@ -2,7 +2,7 @@
 
 API REST da plataforma Readowl, em Java 25 e Spring Boot 4.1.2, com PostgreSQL 18.
 
-> **Estado atual: contas e publicação.** Além da fundação (modelo de dados, migrations, erros e segurança base), já funcionam contas, login, recuperação de senha, login com Google, perfil, obras, gêneros, tags, volumes, capítulos, rascunhos, publicação e administração. A leitura pública, o catálogo e a comunidade entram nas próximas etapas. O contrato HTTP vigente está em [docs/backend-api-contract.md](../../docs/backend-api-contract.md).
+> **Estado atual: contas, publicação e leitura.** Além da fundação (modelo de dados, migrations, erros e segurança base), já funcionam contas, login, recuperação de senha, login com Google, perfil, obras, gêneros, tags, volumes, capítulos, rascunhos, publicação, administração, leitura pública, catálogo com busca e biblioteca. A comunidade e a operação entram nas próximas etapas. O contrato HTTP vigente está em [docs/backend-api-contract.md](../../docs/backend-api-contract.md).
 
 ## Pré-requisitos
 
@@ -134,6 +134,9 @@ Os testes de integração usam PostgreSQL real, de duas formas:
 | `PublishingIntegrationTest` | Volumes, capítulos, reordenação, conflito de rascunho, publicação concorrente, identificadores trocados, acesso de terceiros |
 | `ChapterDocumentsTest` | Lista permitida do documento, geração de HTML, XSS, limites |
 | `AdminAccessIntegrationTest` | Hierarquia de papéis, revogação de sessões, proteção do último root, gêneros e tags |
+| `CatalogIntegrationTest` | Visibilidade, busca sem acentos e com erros de digitação, filtros, ordenação, texto hostil na busca, uso dos índices |
+| `ReadingIntegrationTest` | Leitura sem sessão, nada privado nas respostas, rascunho separado do publicado, navegação entre volumes |
+| `LibraryIntegrationTest` | Seguir obras, progresso de leitura, isolamento entre usuários, cascatas |
 
 Os testes de API usam servidor HTTP real, cookies reais e sessões no PostgreSQL. Só o `MailSender` é substituído. O Google é simulado por um servidor local com ID tokens assinados, então **o fluxo com o Google real depende de credenciais e ainda precisa ser conferido manualmente**.
 
@@ -179,6 +182,13 @@ As dependências seguem uma direção, sem ciclos: `publishing` e `library` conh
 - **Acesso:** `BookAccess` é o único ponto que decide quem altera uma obra. Alterações na estrutura bloqueiam a linha da obra antes de ler os dados.
 - **Documento:** `ChapterDocuments` valida o JSON do editor por lista permitida e gera o HTML escrevendo as tags, com todo texto escapado. Nenhum HTML do cliente é interpretado, por isso não há biblioteca de sanitização.
 - **Revisões:** são imutáveis e todas ficam guardadas. Registram quem publicou.
+
+### Leitura e busca
+
+- **Visibilidade:** `PublicBooks` é o único ponto que decide se uma obra é pública: publicada e de autor não suspenso. As rotas públicas valem igualmente para todos.
+- **Busca:** combina texto completo em português (`search_vector`, com peso maior no título), trechos e similaridade no título (`pg_trgm`) e a sigla. Ignora acentos por `immutable_unaccent`.
+- **Extensões:** a migration `V9` cria `unaccent` e `pg_trgm`. Como são extensões confiáveis, basta o usuário da aplicação ser dono do banco.
+- **Consulta do catálogo:** `CatalogQueries` usa SQL porque os filtros são combináveis. Valores vão sempre como parâmetros, e a ordenação vem de uma lista fixa. Fica em `publishing`, e não em `book`, porque também conta capítulos publicados.
 
 ### Produção
 

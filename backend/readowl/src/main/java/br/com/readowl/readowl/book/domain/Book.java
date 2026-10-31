@@ -22,6 +22,7 @@ import lombok.AccessLevel;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
 
+import java.time.Instant;
 import java.util.HashSet;
 import java.util.Locale;
 import java.util.Set;
@@ -67,6 +68,8 @@ public class Book extends BaseEntity {
     // Alterado apenas por UPDATE atômico: não pode ser sobrescrito por uma entidade desatualizada.
     @Column(nullable = false, updatable = false)
     private long viewCount;
+
+    private Instant lastChapterPublishedAt;
 
     @NotNull
     @ManyToOne(optional = false, fetch = FetchType.LAZY)
@@ -135,6 +138,10 @@ public class Book extends BaseEntity {
     public void replaceTags(Set<Tag> tags) {
         this.tags.clear();
         this.tags.addAll(tags);
+    }
+
+    public void markChapterPublished(Instant at) {
+        lastChapterPublishedAt = at;
     }
 
     public boolean isPublished() {

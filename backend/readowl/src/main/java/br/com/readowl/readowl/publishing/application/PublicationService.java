@@ -21,6 +21,7 @@ import org.springframework.transaction.annotation.Transactional;
 import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.json.JsonMapper;
 
+import java.time.Instant;
 import java.util.UUID;
 
 /**
@@ -65,13 +66,19 @@ public class PublicationService {
         if (rendered.isBlank()) {
             throw ApiException.badRequest("EMPTY_CHAPTER", "Escreva o capítulo antes de publicá-lo.");
         }
+        boolean wasPublished = chapter.isPublished();
         ChapterRevision current = chapter.getPublishedRevision();
-        if (current != null && jsonMapper.readTree(current.getDocument()).equals(document)) {
+        boolean unchanged = current != null && jsonMapper.readTree(current.getDocument()).equals(document);
+        if (unchanged) {
             chapter.publish(current);
         } else {
             chapter.publish(revisions.saveAndFlush(new ChapterRevision(chapter,
                     revisions.findMaxRevisionNumber(chapterId) + 1, rendered.json(), draft.getFormatVersion(),
                     rendered.plainText(), rendered.html(), users.requireById(principal.id()))));
+        }
+        // Repetir a publicação sem alterações não conta como novidade para o catálogo.
+        if (!wasPublished || !unchanged) {
+            chapter.getBook().markChapterPublished(Instant.now());
         }
         return ChapterView.from(chapters.saveAndFlush(chapter));
     }

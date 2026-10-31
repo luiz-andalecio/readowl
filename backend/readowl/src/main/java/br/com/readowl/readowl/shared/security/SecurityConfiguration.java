@@ -48,7 +48,10 @@ class SecurityConfiguration {
                                 "/api/v1/auth/session",
                                 "/api/v1/users/{username}",
                                 "/api/v1/genres",
-                                "/api/v1/tags").permitAll()
+                                "/api/v1/tags",
+                                "/api/v1/books",
+                                "/api/v1/books/{slug}",
+                                "/api/v1/books/{slug}/chapters/{chapterSlug}").permitAll()
                         .requestMatchers(HttpMethod.POST,
                                 "/api/v1/auth/register",
                                 "/api/v1/auth/verify-email",

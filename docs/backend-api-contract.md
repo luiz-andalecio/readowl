@@ -488,6 +488,179 @@ Minhas obras, paginadas. `sort`: `title`, `createdAt` ou `updatedAt`. O padrão 
 }
 ```
 
+## Leitura pública
+
+Não exigem sessão, não criam sessão e não emitem cookies. Mostram **só** conteúdo público: obra publicada, de autor não suspenso, e capítulos publicados. Vale para todos, inclusive para o autor e administradores, que usam `GET /books/{id}/details` e `GET /chapters/{id}/draft` para ver o restante.
+
+### `GET /books`
+
+Catálogo paginado.
+
+| Parâmetro | Efeito |
+|---|---|
+| `query` | Busca no título e na sinopse, até 100 caracteres. Ignora acentos e maiúsculas, aceita trechos do título e tolera erros de digitação. Também encontra pela sigla exata |
+| `genre` | ID do gênero. Repita o parâmetro para exigir vários |
+| `tag` | Nome da tag. Repita o parâmetro para exigir várias |
+| `status` | `ONGOING`, `COMPLETED` ou `HIATUS` |
+| `author` | Username do autor. Use para listar as obras no perfil público |
+| `sort` | `title`, `createdAt`, `lastChapterAt`, `views` ou, em buscas, `relevance`. Com `-` na frente, ordem decrescente |
+| `page`, `size` | Paginação |
+
+Sem `sort`, uma busca ordena por relevância, e o catálogo, pelas atualizações mais recentes (`-lastChapterAt`). Use `-lastChapterAt` e `-views` para as seções da página inicial.
+
+**200**, com `content` neste formato:
+```json
+{
+  "id": "019f...",
+  "title": "Shihais: Remanescente da Aura",
+  "acronym": "SRA",
+  "slug": "sra-shihais-remanescente-da-aura",
+  "synopsis": "...",
+  "status": "ONGOING",
+  "viewCount": 0,
+  "author": { "username": "maria-leitora", "name": "Maria Leitora" },
+  "genres": [{ "id": "019f...", "name": "Fantasia" }],
+  "tags": [{ "id": "019f...", "name": "Magia" }],
+  "publishedChapters": 12,
+  "lastChapterPublishedAt": "2026-10-31T19:32:15.393101Z",
+  "createdAt": "2026-10-31T19:32:15.393101Z"
+}
+```
+
+| Status | `code` | Quando |
+|---|---|---|
+| 400 | `QUERY_TOO_LONG` | Busca acima de 100 caracteres |
+| 400 | `TOO_MANY_FILTERS` | Mais de 10 gêneros ou 10 tags |
+| 400 | `BAD_REQUEST` | `status` ou `genre` em formato inválido |
+
+### `GET /books/{slug}`
+
+Página da obra.
+
+**200**
+```json
+{
+  "id": "019f...",
+  "title": "Shihais: Remanescente da Aura",
+  "acronym": "SRA",
+  "slug": "sra-shihais-remanescente-da-aura",
+  "synopsis": "...",
+  "releaseFrequency": "Semanal",
+  "status": "ONGOING",
+  "viewCount": 0,
+  "author": { "username": "maria-leitora", "name": "Maria Leitora" },
+  "genres": [{ "id": "019f...", "name": "Fantasia" }],
+  "tags": [],
+  "lastChapterPublishedAt": "2026-10-31T19:32:15.393101Z",
+  "createdAt": "2026-10-31T19:32:15.393101Z",
+  "volumes": [{ "id": "019f...", "title": "Volume 1" }],
+  "chapters": [{
+    "id": "019f...",
+    "title": "Prólogo",
+    "slug": "prologo",
+    "volumeId": "019f...",
+    "publishedAt": "2026-10-31T19:32:15.393101Z"
+  }]
+}
+```
+
+`chapters` vem na ordem de leitura: primeiro os capítulos sem volume, depois cada volume em ordem. Volumes sem capítulos publicados não aparecem.
+
+Responde 404 `BOOK_NOT_FOUND` se a obra não for pública.
+
+### `GET /books/{slug}/chapters/{chapterSlug}`
+
+Texto do capítulo para leitura.
+
+**200**
+```json
+{
+  "id": "019f...",
+  "title": "Prólogo",
+  "slug": "prologo",
+  "volume": { "id": "019f...", "title": "Volume 1" },
+  "html": "<p>Era uma vez.</p>",
+  "publishedAt": "2026-10-31T19:32:15.393101Z",
+  "book": {
+    "id": "019f...",
+    "title": "Shihais: Remanescente da Aura",
+    "slug": "sra-shihais-remanescente-da-aura",
+    "author": { "username": "maria-leitora", "name": "Maria Leitora" }
+  },
+  "previous": null,
+  "next": { "title": "Capítulo 1", "slug": "capitulo-1" }
+}
+```
+
+`html` é gerado pelo servidor a partir do documento validado, com todo o texto escapado, e pode ser inserido na página com `[innerHTML]`. `volume`, `previous` e `next` podem ser `null`.
+
+Responde 404 com `BOOK_NOT_FOUND` ou `CHAPTER_NOT_FOUND`. Depois de renomear uma obra ou capítulo, **o endereço antigo responde 404**.
+
+## Biblioteca
+
+Exige sessão. Cada usuário só acessa a própria biblioteca.
+
+### `GET /library`
+
+Obras seguidas, das mais recentes para as mais antigas, paginadas. Obras que saíram do ar não aparecem, mas voltam se forem republicadas.
+
+**200**, com `content` neste formato:
+```json
+{
+  "book": {
+    "id": "019f...",
+    "title": "Shihais: Remanescente da Aura",
+    "acronym": "SRA",
+    "slug": "sra-shihais-remanescente-da-aura",
+    "status": "ONGOING",
+    "authorUsername": "maria-leitora",
+    "authorName": "Maria Leitora",
+    "lastChapterPublishedAt": "2026-10-31T19:32:15.393101Z"
+  },
+  "followedAt": "2026-10-31T19:32:15.393101Z",
+  "progress": {
+    "chapterId": "019f...",
+    "chapterTitle": "Prólogo",
+    "chapterSlug": "prologo",
+    "percent": 40,
+    "updatedAt": "2026-10-31T19:32:15.393101Z"
+  }
+}
+```
+
+`progress` é `null` se não houver leitura registrada ou se o capítulo saiu do ar.
+
+### `GET /library/{bookId}`
+
+Estado do usuário em uma obra, para a página da obra e o leitor.
+
+**200**
+```json
+{ "following": true, "progress": null }
+```
+
+`progress` tem o formato acima. Responde 404 `BOOK_NOT_FOUND` se a obra não for pública.
+
+### `PUT /library/{bookId}`
+
+Segue a obra. Envie um corpo vazio. Repetir não é erro. **200**, com o corpo de `GET /library/{bookId}`.
+
+### `DELETE /library/{bookId}`
+
+Deixa de seguir, mesmo com a obra fora do ar. Repetir não é erro. **204**, sem corpo. O progresso de leitura é mantido.
+
+### `PUT /library/{bookId}/progress`
+
+Registra onde o usuário parou. Não exige seguir a obra. A última leitura vale, mesmo voltando a um capítulo anterior.
+
+```json
+{ "chapterId": "019f...", "percent": 40 }
+```
+
+`percent` vai de 0 a 100. **200**, com o corpo de `GET /library/{bookId}`.
+
+Responde 404 `CHAPTER_NOT_FOUND` se o capítulo não pertencer à obra ou não estiver publicado.
+
 ## Volumes e capítulos
 
 Mesmas regras de acesso das obras. Volumes são opcionais: um capítulo pode ficar direto na obra.
@@ -715,7 +888,6 @@ Nada disso foi alterado no projeto Angular.
 
 Estes grupos ainda não existem e seus caminhos podem mudar:
 
-- **Leitura e biblioteca:** catálogo, busca, leitura pública, obras seguidas, progresso.
 - **Comunidade:** comentários, avaliações, reações, visualizações.
 - **Operação:** notificações, denúncias, moderação, administração.
 - **Depois do núcleo:** respostas e curtidas em comentários, banners, upload de imagens.
