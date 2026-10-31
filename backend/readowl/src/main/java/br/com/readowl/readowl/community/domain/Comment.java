@@ -49,6 +49,10 @@ public class Comment extends BaseEntity {
 
     private Instant deletedAt;
 
+    private Instant moderatedAt;
+
+    private Instant editedAt;
+
     public Comment(String content, User user, Book book, Chapter chapter, Comment parent) {
         this.content = content;
         this.user = user;
@@ -61,8 +65,11 @@ public class Comment extends BaseEntity {
         return deletedAt != null;
     }
 
-    public void edit(String content) {
-        this.content = content;
+    public void edit(String content, Instant at) {
+        if (!content.equals(this.content)) {
+            this.content = content;
+            this.editedAt = at;
+        }
     }
 
     /**
@@ -70,5 +77,19 @@ public class Comment extends BaseEntity {
      */
     public void delete(Instant at) {
         this.deletedAt = at;
+    }
+
+    public boolean isModerated() {
+        return moderatedAt != null;
+    }
+
+    public void hideByModeration(Instant at) {
+        this.deletedAt = at;
+        this.moderatedAt = at;
+    }
+
+    public void restoreFromModeration() {
+        this.deletedAt = null;
+        this.moderatedAt = null;
     }
 }

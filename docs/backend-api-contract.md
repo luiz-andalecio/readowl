@@ -27,7 +27,7 @@ Listas paginadas aceitam `?page=0&size=20&sort=-updatedAt`. `page` começa em 0 
 | `role` | Acesso |
 |---|---|
 | `USER` | Gerencia as próprias obras e o próprio perfil |
-| `MODERATOR` | Igual a `USER` por enquanto: as ações de moderação ainda não existem |
+| `MODERATOR` | Tudo o que o `USER` faz, e atende denúncias e oculta ou restaura conteúdo. Não edita conteúdo de terceiros nem usuários |
 | `ADMIN` | Tudo o que o `USER` faz, sobre as obras e os comentários de **qualquer** pessoa, além de gêneros e tags. Vê usuários, mas não os edita |
 | `ROOT` | Tudo o que o `ADMIN` faz, e edita usuários |
 
@@ -329,6 +329,7 @@ Dados da própria conta. Exige sessão.
   "description": null,
   "role": "USER",
   "emailVerified": true,
+  "emailNewChapters": false,
   "createdAt": "2026-10-31T19:32:15.393101Z"
 }
 ```
@@ -338,13 +339,14 @@ Dados da própria conta. Exige sessão.
 Atualiza o perfil. Exige sessão. Campos ausentes não mudam; outros campos enviados são ignorados.
 
 ```json
-{ "name": "Maria L.", "description": "Leio de tudo." }
+{ "name": "Maria L.", "description": "Leio de tudo.", "emailNewChapters": true }
 ```
 
 | Campo | Regra |
 |---|---|
 | `name` | Até 100 caracteres, não vazio |
 | `description` | Até 2000 caracteres. Em branco, remove a descrição |
+| `emailNewChapters` | Receber e-mail de novos capítulos das obras seguidas. Começa desligado |
 
 **200**, com o mesmo corpo de `GET /users/me`.
 
@@ -425,6 +427,7 @@ Vale o mesmo para capítulos: o slug segue o título. Títulos repetidos dentro 
   "releaseFrequency": "Semanal",
   "status": "ONGOING",
   "publicationState": "DRAFT",
+  "moderated": false,
   "viewCount": 0,
   "authorUsername": "maria-leitora",
   "genres": [{ "id": "019f...", "name": "Fantasia" }],
@@ -434,7 +437,7 @@ Vale o mesmo para capítulos: o slug segue o título. Títulos repetidos dentro 
 }
 ```
 
-`status` é `ONGOING`, `COMPLETED` ou `HIATUS`. `publicationState` é `DRAFT`, `PUBLISHED` ou `UNPUBLISHED`.
+`status` é `ONGOING`, `COMPLETED` ou `HIATUS`. `publicationState` é `DRAFT`, `PUBLISHED` ou `UNPUBLISHED`. `moderated` é `true` se a obra foi ocultada pela moderação. Mostre isso ao autor, que não consegue publicá-la nesse estado.
 
 | Status | `code` | Quando |
 |---|---|---|
@@ -469,6 +472,7 @@ Envie um corpo vazio. **200**, com o corpo de `GET /books/{id}/details`.
 | Status | `code` | Quando |
 |---|---|---|
 | 409 | `BOOK_WITHOUT_PUBLISHED_CHAPTERS` | Publique ao menos um capítulo antes da obra |
+| 409 | `BOOK_UNDER_MODERATION` | A obra foi ocultada pela moderação. Vale também para administradores |
 
 ### `GET /users/me/books`
 
@@ -483,6 +487,7 @@ Minhas obras, paginadas. `sort`: `title`, `createdAt` ou `updatedAt`. O padrão 
   "slug": "sra-shihais-remanescente-da-aura",
   "status": "ONGOING",
   "publicationState": "DRAFT",
+  "moderated": false,
   "authorUsername": "maria-leitora",
   "createdAt": "2026-10-31T19:32:15.393101Z",
   "updatedAt": "2026-10-31T19:32:15.393101Z"
@@ -704,7 +709,7 @@ Limites por minuto, além dos quais a resposta é 429 `RATE_LIMITED`:
 
 `content` tem de 1 a 5000 caracteres, sem contar espaços nas pontas.
 
-`PATCH /comments/{id}`, com o mesmo corpo, altera o texto. **200**, com o corpo acima e `edited: true`. Quem comentou edita enquanto o conteúdo estiver no ar; `ADMIN` e `ROOT` editam sempre. **A resposta não indica quem editou.**
+`PATCH /comments/{id}`, com o mesmo corpo, altera o texto. **200**, com o corpo acima e `edited: true`. Quem comentou edita enquanto o conteúdo estiver no ar; `ADMIN` e `ROOT` editam sempre. **A resposta não indica quem editou:** isso fica em `GET /admin/audit-log`.
 
 `DELETE /comments/{id}` remove o comentário da página. **204**, sem corpo. Quem comentou pode excluir mesmo com o conteúdo fora do ar; `ADMIN` e `ROOT` também. O autor da obra não exclui comentários de terceiros. **O texto continua guardado no banco para a moderação.**
 
@@ -775,6 +780,175 @@ Registra que o usuário abriu o capítulo. Envie um corpo vazio. **204**, sem co
 
 O servidor decide o que conta: uma visita por usuário e capítulo a cada 2 minutos, e nunca as do autor da obra. O total da obra é público em `viewCount`. O total de cada capítulo só aparece em `GET /books/{id}/contents`, para o autor e a administração.
 
+## Notificações
+
+Exige sessão. Cada usuário só acessa as próprias. Quem segue uma obra é avisado quando um capítulo é publicado pela primeira vez com a obra no ar. Correções e republicações não avisam, nem capítulos publicados com a obra fora do ar.
+
+**A notificação não é imediata:** um processo em segundo plano as cria em até cerca de 15 segundos. A publicação não depende dele.
+
+### `GET /notifications`
+
+Das mais recentes para as mais antigas, paginadas. `unreadOnly=true` mostra só as não lidas. Conteúdo que saiu do ar não aparece e volta se for republicado. Os slugs são os atuais.
+
+**200**, com `content` neste formato:
+```json
+{
+  "id": "019f...",
+  "type": "NEW_CHAPTER",
+  "read": false,
+  "book": { "id": "019f...", "title": "Shihais: Remanescente da Aura", "slug": "sra-shihais-remanescente-da-aura" },
+  "chapter": { "id": "019f...", "title": "Prólogo", "slug": "prologo" },
+  "createdAt": "2026-10-31T19:32:15.393101Z"
+}
+```
+
+### `GET /notifications/unread-count`
+
+Para consultar periodicamente. Não há WebSocket. **200**:
+```json
+{ "unread": 3 }
+```
+
+### `PATCH /notifications/{id}`
+
+Marca como lida ou não lida. **204**, sem corpo. Responde 404 `NOTIFICATION_NOT_FOUND` se não existir ou for de outra pessoa.
+
+```json
+{ "read": true }
+```
+
+### `POST /notifications/read-all`
+
+Marca todas como lidas. Envie um corpo vazio. **204**, sem corpo.
+
+### E-mails
+
+Quem liga `emailNewChapters` em `PATCH /users/me` também recebe um e-mail por capítulo novo, com link para `/obras/{slug da obra}/capitulos/{slug do capítulo}` e instruções para desligar em `/conta`. **Por padrão, está desligado.** Se a pessoa desligar ou o capítulo sair do ar antes do envio, o e-mail não é enviado.
+
+## Denúncias
+
+### `POST /reports`
+
+Exige sessão. Só o que está público pode ser denunciado.
+
+```json
+{ "targetType": "COMMENT", "targetId": "019f...", "reason": "ABUSE", "details": "Ofensa direta." }
+```
+
+| Campo | Regra |
+|---|---|
+| `targetType` | `BOOK`, `CHAPTER`, `COMMENT` ou `USER` |
+| `reason` | `SPAM`, `ABUSE`, `ILLEGAL_CONTENT`, `COPYRIGHT` ou `OTHER` |
+| `details` | Opcional, até 1000 caracteres |
+
+**201**
+```json
+{
+  "id": "019f...",
+  "targetType": "COMMENT",
+  "targetId": "019f...",
+  "reason": "ABUSE",
+  "status": "OPEN",
+  "createdAt": "2026-10-31T19:32:15.393101Z"
+}
+```
+
+Limite de 10 denúncias por hora por conta e de 30 por IP.
+
+| Status | `code` | Quando |
+|---|---|---|
+| 403 | `OWN_CONTENT_REPORT` | O conteúdo é da própria pessoa |
+| 404 | `BOOK_NOT_FOUND`, `CHAPTER_NOT_FOUND`, `COMMENT_NOT_FOUND` ou `USER_NOT_FOUND` | Inexistente ou fora do ar |
+| 409 | `REPORT_ALREADY_OPEN` | A pessoa já tem uma denúncia em aberto sobre este alvo |
+
+## Moderação
+
+Em `/api/v1/moderation`, para `MODERATOR`, `ADMIN` e `ROOT`. Os demais recebem 403 `ACCESS_DENIED`.
+
+### `GET /moderation/reports`
+
+Paginada, das mais antigas para as mais recentes por padrão. `sort`: `createdAt`. Filtros opcionais: `status` (`OPEN`, `RESOLVED` ou `DISMISSED`) e `targetType`.
+
+**200**, com `content` neste formato, também usado em `GET /moderation/reports/{id}`:
+```json
+{
+  "id": "019f...",
+  "targetType": "COMMENT",
+  "targetId": "019f...",
+  "targetSnapshot": "Texto do comentário no momento da denúncia",
+  "targetOwner": { "id": "019f...", "username": "joao" },
+  "reason": "ABUSE",
+  "details": "Ofensa direta.",
+  "reporter": { "id": "019f...", "username": "maria-leitora" },
+  "status": "OPEN",
+  "resolutionNote": null,
+  "resolvedBy": null,
+  "resolvedAt": null,
+  "createdAt": "2026-10-31T19:32:15.393101Z"
+}
+```
+
+`targetSnapshot` guarda o conteúdo no momento da denúncia, que continua disponível mesmo se o alvo for editado ou excluído. Em obras traz título e sinopse; em capítulos, título e número da revisão; em comentários, o texto; em usuários, nome de usuário, nome e descrição. **Exiba como texto. Quem denunciou não deve ser revelado fora da moderação.**
+
+### `PATCH /moderation/reports/{id}`
+
+Encerra a denúncia. `note` é opcional, até 1000 caracteres. **200**, com o corpo acima. Encerrar não oculta o conteúdo: use as ações abaixo.
+
+```json
+{ "status": "RESOLVED", "note": "Comentário ocultado." }
+```
+
+| Status | `code` | Quando |
+|---|---|---|
+| 400 | `INVALID_REPORT_STATUS` | `status` não é `RESOLVED` nem `DISMISSED` |
+| 404 | `REPORT_NOT_FOUND` | Denúncia inexistente |
+| 409 | `REPORT_CLOSED` | Já encerrada |
+
+### Ocultar e restaurar
+
+| Endpoint | Efeito |
+|---|---|
+| `POST /moderation/books/{id}/hide` | Tira a obra do ar. O autor não consegue republicar |
+| `POST /moderation/chapters/{id}/hide` | Tira o capítulo do ar. O autor não consegue republicar |
+| `POST /moderation/comments/{id}/hide` | Oculta o comentário. A pessoa não consegue editar nem excluir |
+| `POST /moderation/{books, chapters ou comments}/{id}/restore` | Desfaz a ocultação |
+
+Todas exigem o motivo, de até 500 caracteres, que fica na auditoria. **204**, sem corpo.
+
+```json
+{ "reason": "Plágio confirmado." }
+```
+
+**Restaurar não republica obras e capítulos:** o autor decide. Comentários voltam a aparecer na hora. O que a própria pessoa excluiu não pode ser restaurado.
+
+| Status | `code` | Quando |
+|---|---|---|
+| 404 | `BOOK_NOT_FOUND`, `CHAPTER_NOT_FOUND` ou `COMMENT_NOT_FOUND` | Inexistente |
+| 409 | `ALREADY_HIDDEN` | Já está oculto ou foi excluído pela própria pessoa |
+| 409 | `NOT_HIDDEN` | Não está oculto pela moderação |
+| 409 | `LAST_PUBLISHED_CHAPTER` | É o último capítulo publicado de uma obra no ar. Oculte a obra |
+
+Suspender contas não é uma ação de moderação: é edição de usuário, exclusiva do `ROOT`, em `PATCH /admin/users/{id}`.
+
+### `GET /moderation/comments`
+
+Todos os comentários de uma obra (`?bookId=`, inclusive os dos capítulos) ou de uma pessoa (`?userId=`), inclusive excluídos, ocultos e de obras fora do ar. Informe exatamente um dos dois, ou recebe 400 `INVALID_FILTER`. Paginada. `sort`: `createdAt`, com padrão `-createdAt`.
+
+**200**, com `content` neste formato:
+```json
+{
+  "id": "019f...",
+  "bookId": "019f...",
+  "chapterId": null,
+  "content": "Texto",
+  "author": { "id": "019f...", "username": "joao", "name": "João" },
+  "deletedAt": null,
+  "moderatedAt": null,
+  "createdAt": "2026-10-31T19:32:15.393101Z",
+  "updatedAt": "2026-10-31T19:32:15.393101Z"
+}
+```
+
 ## Volumes e capítulos
 
 Mesmas regras de acesso das obras. Volumes são opcionais: um capítulo pode ficar direto na obra.
@@ -792,6 +966,7 @@ Mesmas regras de acesso das obras. Volumes são opcionais: um capítulo pode fic
     "state": "DRAFT",
     "displayOrder": 1,
     "volumeId": "019f...",
+    "moderated": false,
     "viewCount": 0,
     "createdAt": "2026-10-31T19:32:15.393101Z",
     "updatedAt": "2026-10-31T19:32:15.393101Z"
@@ -887,6 +1062,7 @@ Publica o rascunho na versão que o usuário viu.
 |---|---|---|
 | 400 | `EMPTY_CHAPTER` | Capítulo sem texto |
 | 409 | `DRAFT_CONFLICT` | O rascunho mudou depois de `draftVersion` |
+| 409 | `CHAPTER_UNDER_MODERATION` | O capítulo foi ocultado pela moderação. Vale também para administradores |
 
 O capítulo só aparece para leitores quando **a obra também está publicada**.
 
@@ -927,6 +1103,7 @@ Em `/api/v1/admin`. Responde 403 `ACCESS_DENIED` a quem não tem o papel exigido
 | `DELETE /admin/genres/{id}`, `DELETE /admin/tags/{id}` | `ADMIN`, `ROOT` | Exclui. **204** |
 | `GET /admin/users`, `GET /admin/users/{id}` | `ADMIN`, `ROOT` | Consulta usuários. `sort`: `username`, `email` ou `createdAt` |
 | `PATCH /admin/users/{id}` | `ROOT` | Edita um usuário |
+| `GET /admin/audit-log` | `ADMIN`, `ROOT` | Registro das ações administrativas |
 
 Gêneros e tags podem responder 409 com `GENRE_NAME_TAKEN`, `TAG_NAME_TAKEN`, `GENRE_IN_USE` ou `TAG_IN_USE`, e 404 com `GENRE_NOT_FOUND` ou `TAG_NOT_FOUND`.
 
@@ -962,6 +1139,38 @@ Campos ausentes não mudam. `status` é `ACTIVE` ou `SUSPENDED`. Senha e e-mail 
 | 409 | `USERNAME_TAKEN` | Nome de usuário ocupado ou reservado |
 | 409 | `LAST_ROOT` | Removeria a última conta root ativa |
 
+### `GET /admin/audit-log`
+
+Das entradas mais recentes para as mais antigas, paginada. Filtros opcionais: `actorId` e `resource`, com o valor exato registrado. Nenhuma rota altera ou exclui entradas.
+
+**200**, com `content` neste formato:
+```json
+{
+  "id": "019f...",
+  "actorId": "019f...",
+  "actorUsername": "root",
+  "action": "USER_UPDATED",
+  "resource": "users/019f...",
+  "outcome": "SUCCESS",
+  "correlationId": "cf7b9043-6e9e-40a2-8353-cf9635534d95",
+  "details": { "role": { "from": "USER", "to": "MODERATOR" } },
+  "createdAt": "2026-10-31T19:32:15.393101Z"
+}
+```
+
+`outcome` é `SUCCESS`, `FAILED` ou `DENIED`. Corpos de requisição nunca são guardados, então `details` é `null` na maioria das entradas.
+
+| O que é registrado | `action` |
+|---|---|
+| Edição de usuário, com antes e depois | `USER_UPDATED` |
+| Encerramento de denúncia | `REPORT_CLOSED` |
+| Ocultar e restaurar, com o motivo | `BOOK_HIDDEN`, `BOOK_RESTORED`, `CHAPTER_HIDDEN`, `CHAPTER_RESTORED`, `COMMENT_HIDDEN`, `COMMENT_RESTORED` |
+| Demais alterações em `/admin` e `/moderation`, e tentativas que falham | Método e rota, como `POST /api/v1/admin/tags` |
+| Alterações de `ADMIN` e `ROOT` em obras e comentários de outras pessoas | Método e rota, como `PATCH /api/v1/books/{id}` |
+| Acesso recusado a `/admin` e `/moderation`, de quem está logado | Método e caminho, com `outcome` `DENIED` |
+
+Leituras não são registradas.
+
 ## Operacional
 
 ### `GET /actuator/health`
@@ -995,6 +1204,8 @@ Nada disso foi alterado no projeto Angular.
 | Leitura | Estilizar as classes `text-left`, `text-center`, `text-right` e `text-justify` |
 | Comentários | Exibir como texto, sem `innerHTML`, preservando as quebras de linha |
 | Visitas | Chamar `POST /chapters/{id}/views` no navegador ao abrir um capítulo, só com o usuário logado |
+| Notificações | Consultar `GET /notifications/unread-count` periodicamente, só com o usuário logado |
+| E-mail de capítulo novo | Ter a página `/obras/{slug da obra}/capitulos/{slug do capítulo}` e a opção `emailNewChapters` em `/conta` |
 
 ### Pontos a alinhar
 
@@ -1005,5 +1216,4 @@ Nada disso foi alterado no projeto Angular.
 
 Estes grupos ainda não existem e seus caminhos podem mudar:
 
-- **Operação:** notificações, denúncias, moderação, administração.
 - **Depois do núcleo:** respostas e curtidas em comentários, banners, upload de imagens.

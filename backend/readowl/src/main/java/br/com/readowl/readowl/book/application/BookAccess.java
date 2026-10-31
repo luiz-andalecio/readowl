@@ -2,6 +2,7 @@ package br.com.readowl.readowl.book.application;
 
 import br.com.readowl.readowl.book.domain.Book;
 import br.com.readowl.readowl.book.infrastructure.BookRepository;
+import br.com.readowl.readowl.shared.audit.AuditContext;
 import br.com.readowl.readowl.shared.exception.ApiException;
 import br.com.readowl.readowl.user.application.SessionUser;
 import org.springframework.stereotype.Service;
@@ -43,8 +44,22 @@ public class BookAccess {
         books.findLockedById(bookId);
     }
 
+    /**
+     * Para a moderação, cuja permissão vem do papel exigido pela rota.
+     */
+    public Book requireLocked(UUID bookId) {
+        return books.findLockedById(bookId).orElseThrow(BookAccess::notFound);
+    }
+
     public static boolean canManage(Book book, SessionUser principal) {
-        return principal.isAdministrator() || book.getAuthor().getId().equals(principal.id());
+        if (book.getAuthor().getId().equals(principal.id())) {
+            return true;
+        }
+        if (principal.isAdministrator()) {
+            AuditContext.markOverride();
+            return true;
+        }
+        return false;
     }
 
     private static Book checked(Book book, SessionUser principal) {

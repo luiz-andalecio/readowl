@@ -8,9 +8,12 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.Instant;
+import java.util.Collection;
+import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
+import java.util.stream.Collectors;
 
 @Service
 @Transactional(readOnly = true)
@@ -72,11 +75,21 @@ public class UserService {
         return users.saveAndFlush(user);
     }
 
+    /**
+     * Campos nulos não são alterados.
+     */
     @Transactional
-    public User updateProfile(UUID id, String name, String description) {
+    public User updateProfile(UUID id, String name, String description, Boolean emailNewChapters) {
         User user = requireById(id);
         user.updateProfile(name, description);
+        if (emailNewChapters != null) {
+            user.changeEmailNewChapters(emailNewChapters);
+        }
         return user;
+    }
+
+    public Map<UUID, String> usernamesById(Collection<UUID> ids) {
+        return users.findAllById(ids).stream().collect(Collectors.toMap(User::getId, User::getUsername));
     }
 
     @Transactional

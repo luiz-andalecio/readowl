@@ -71,6 +71,8 @@ public class Book extends BaseEntity {
 
     private Instant lastChapterPublishedAt;
 
+    private Instant moderatedAt;
+
     @NotNull
     @ManyToOne(optional = false, fetch = FetchType.LAZY)
     @JoinColumn(name = "author_id", nullable = false)
@@ -154,5 +156,23 @@ public class Book extends BaseEntity {
 
     public void unpublish() {
         publicationState = PublicationState.UNPUBLISHED;
+    }
+
+    public boolean isModerated() {
+        return moderatedAt != null;
+    }
+
+    /**
+     * Tira a obra do ar. Restaurar não a republica: isso continua sendo decisão do autor.
+     */
+    public void hideByModeration(Instant at) {
+        moderatedAt = at;
+        if (isPublished()) {
+            unpublish();
+        }
+    }
+
+    public void restoreFromModeration() {
+        moderatedAt = null;
     }
 }

@@ -2,7 +2,7 @@
 
 API REST da plataforma Readowl, em Java 25 e Spring Boot 4.1.2, com PostgreSQL 18.
 
-> **Estado atual: contas, publicação, leitura e comunidade.** Além da fundação (modelo de dados, migrations, erros e segurança base), já funcionam contas, login, recuperação de senha, login com Google, perfil, obras, gêneros, tags, volumes, capítulos, rascunhos, publicação, administração, leitura pública, catálogo com busca, biblioteca, comentários, avaliações, reações e visualizações. A operação entra na próxima etapa. O contrato HTTP vigente está em [docs/backend-api-contract.md](../../docs/backend-api-contract.md).
+> **Estado atual: contas, publicação, leitura, comunidade e operação.** Além da fundação (modelo de dados, migrations, erros e segurança base), já funcionam contas, login, recuperação de senha, login com Google, perfil, obras, gêneros, tags, volumes, capítulos, rascunhos, publicação, administração, leitura pública, catálogo com busca, biblioteca, comentários, avaliações, reações, visualizações, notificações, denúncias, moderação e auditoria. O contrato HTTP vigente está em [docs/backend-api-contract.md](../../docs/backend-api-contract.md).
 
 ## Pré-requisitos
 
@@ -140,6 +140,9 @@ Os testes de integração usam PostgreSQL real, de duas formas:
 | `CommentIntegrationTest` | Comentários em obras e capítulos, permissões, texto hostil, repetição, limites, contas suspensas, cascatas |
 | `RatingAndReactionIntegrationTest` | Unicidade por usuário, resumo calculado no servidor, valores forjados, autor impedido, concorrência, limites |
 | `ChapterViewIntegrationTest` | Janela de 2 minutos, autor não conta, concorrência entre usuários e com a publicação, contagem por capítulo restrita |
+| `NotificationIntegrationTest` | Outbox, reprocessamento, workers simultâneos, tentativas limitadas, leitura por usuário, e-mails com consentimento |
+| `ModerationIntegrationTest` | Permissões por papel, denúncias sem repetição, cópia do conteúdo, ocultar e restaurar, bloqueio de republicação |
+| `AuditLogIntegrationTest` | O que é registrado e o que não é, antes e depois, resultado, correlação, ausência de textos privados |
 
 Os testes de API usam servidor HTTP real, cookies reais e sessões no PostgreSQL. Só o `MailSender` é substituído. O Google é simulado por um servidor local com ID tokens assinados, então **o fluxo com o Google real depende de credenciais e ainda precisa ser conferido manualmente**.
 
@@ -159,9 +162,11 @@ Monólito modular por domínio, em `br.com.readowl.readowl`. Cada módulo tem as
 | `publishing` | Volumes, capítulos, rascunhos e revisões publicadas |
 | `library` | Obras seguidas e progresso de leitura |
 | `community` | Comentários, avaliações, reações e visualizações |
+| `notification` | Outbox, notificações e e-mails de novos capítulos |
+| `moderation` | Denúncias, ações sobre conteúdo e consulta da auditoria |
 | `banner` | Banners |
 
-As dependências seguem uma direção, sem ciclos: `publishing` e `library` conhecem `book`; `book` conhece `user` e `genre`; `community` conhece `publishing`, `book` e `user`.
+As dependências seguem uma direção, sem ciclos: `publishing` e `library` conhecem `book`; `book` conhece `user` e `genre`; `community` conhece `publishing`, `book` e `user`; `notification` conhece `publishing`; `moderation` conhece `community`, `publishing`, `book` e `user`. A gravação da auditoria fica em `shared`, porque vários módulos a usam. A publicação avisa `notification` por evento, sem conhecê-la.
 
 ### Persistência
 
@@ -198,6 +203,15 @@ As dependências seguem uma direção, sem ciclos: `publishing` e `library` conh
 - **Visualizações:** um único comando SQL (`ChapterViewRepository.count`) decide e incrementa, o que mantém a contagem correta entre instâncias. Ele altera a obra antes do capítulo, na mesma ordem da publicação, para evitar deadlocks. Não altera `version`, então uma visita não causa conflito na edição do autor. Nenhum IP é guardado.
 - **Avaliações e reações:** gravadas por upsert e sempre somadas a partir das linhas, sem contadores que possam divergir. O cliente só envia a própria nota ou reação.
 - **Comentários:** texto puro, exibido pelo frontend sem interpretar HTML. A exclusão é lógica, e o texto fica para a moderação. A checagem de repetição usa um bloqueio consultivo por usuário, liberado ao fim da transação.
+
+### Operação
+
+- **Notificações:** a publicação grava um evento em `outbox_events` na mesma transação. `NotificationWorker` roda a cada 15 segundos (`readowl.notifications.poll-interval`), com `FOR UPDATE SKIP LOCKED`, o que permite várias instâncias. Um único `INSERT` atende todos os seguidores, e a restrição `(user_id, event_id)` torna o reprocessamento seguro.
+- **Falhas:** eventos e e-mails têm até 3 tentativas com espera crescente. A falha fica na própria linha (`last_error`, `failed_at`, `email_last_error`, `email_status = 'FAILED'`) e não é repetida depois disso. Reprocessar exige alterar o banco.
+- **Limpeza:** eventos processados são apagados depois de 30 dias. Os que falharam ficam, e as notificações também: a retenção delas ainda não foi definida.
+- **E-mails de capítulos:** só com `users.email_new_chapters`, desligado por padrão. A entrega é ao menos uma vez: se a aplicação cair entre o envio e o commit, o e-mail se repete.
+- **Moderação:** ocultar tira o conteúdo do ar e impede republicar (`moderated_at`). Suspender contas continua exclusivo do root.
+- **Auditoria:** `AuditTrail.record` grava na mesma transação da ação, para mudanças em usuários, moderação e denúncias. `AuditInterceptor` registra as demais alterações administrativas depois da resposta, então **uma queda nesse instante pode perder a entrada**. Corpos de requisição nunca são gravados. A retenção ainda não foi definida.
 
 ### Produção
 

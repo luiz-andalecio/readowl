@@ -17,6 +17,8 @@ import lombok.AccessLevel;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
 
+import java.time.Instant;
+
 @Entity
 @Table(name = "chapters")
 @Getter
@@ -57,6 +59,8 @@ public class Chapter extends BaseEntity {
     @JoinColumn(name = "published_revision_id")
     private ChapterRevision publishedRevision;
 
+    private Instant moderatedAt;
+
     public Chapter(Book book, Volume volume, String title, String slug, int displayOrder) {
         this.book = book;
         this.volume = volume;
@@ -92,5 +96,23 @@ public class Chapter extends BaseEntity {
      */
     public void unpublish() {
         this.state = ChapterState.UNPUBLISHED;
+    }
+
+    public boolean isModerated() {
+        return moderatedAt != null;
+    }
+
+    /**
+     * Tira o capítulo do ar. Restaurar não o republica: isso continua sendo decisão do autor.
+     */
+    public void hideByModeration(Instant at) {
+        this.moderatedAt = at;
+        if (isPublished()) {
+            unpublish();
+        }
+    }
+
+    public void restoreFromModeration() {
+        this.moderatedAt = null;
     }
 }

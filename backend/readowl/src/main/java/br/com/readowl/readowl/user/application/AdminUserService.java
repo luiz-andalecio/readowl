@@ -1,6 +1,7 @@
 package br.com.readowl.readowl.user.application;
 
 import br.com.readowl.readowl.shared.api.PageResponse;
+import br.com.readowl.readowl.shared.audit.AuditTrail;
 import br.com.readowl.readowl.shared.exception.ApiException;
 import br.com.readowl.readowl.user.domain.Role;
 import br.com.readowl.readowl.user.domain.User;
@@ -11,6 +12,8 @@ import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.util.LinkedHashMap;
+import java.util.Map;
 import java.util.UUID;
 
 /**
@@ -24,11 +27,13 @@ public class AdminUserService {
     private final UserRepository users;
     private final UserService userService;
     private final ApplicationEventPublisher events;
+    private final AuditTrail audit;
 
-    AdminUserService(UserRepository users, UserService userService, ApplicationEventPublisher events) {
+    AdminUserService(UserRepository users, UserService userService, ApplicationEventPublisher events, AuditTrail audit) {
         this.users = users;
         this.userService = userService;
         this.events = events;
+        this.audit = audit;
     }
 
     /**
@@ -47,8 +52,9 @@ public class AdminUserService {
         return userService.requireById(id);
     }
 
-    public User update(UUID id, UserChanges changes) {
+    public User update(UUID id, UserChanges changes, SessionUser actor) {
         User user = userService.requireById(id);
+        Map<String, Object> audited = auditedChanges(user, changes);
         boolean loses = (changes.role() != null && changes.role() != Role.ROOT)
                 || changes.status() == UserStatus.SUSPENDED;
         if (user.getRole() == Role.ROOT && user.isActive() && loses) {
@@ -71,10 +77,32 @@ public class AdminUserService {
             user.changeStatus(changes.status());
         }
         User saved = users.saveAndFlush(user);
+        audit.record(actor.id(), "USER_UPDATED", "users/" + id, audited);
         if (accessChanged) {
             events.publishEvent(new UserAccessChanged(id));
         }
         return saved;
+    }
+
+    /**
+     * Os valores de antes e depois, sem a descrição, que é texto livre: registra só que mudou.
+     */
+    private static Map<String, Object> auditedChanges(User user, UserChanges changes) {
+        Map<String, Object> audited = new LinkedHashMap<>();
+        addChange(audited, "name", user.getName(), changes.name());
+        addChange(audited, "username", user.getUsername(), changes.username());
+        addChange(audited, "role", user.getRole(), changes.role());
+        addChange(audited, "status", user.getStatus(), changes.status());
+        if (changes.description() != null && !changes.description().equals(user.getDescription())) {
+            audited.put("description", "alterada");
+        }
+        return audited;
+    }
+
+    private static void addChange(Map<String, Object> audited, String field, Object before, Object after) {
+        if (after != null && !after.equals(before)) {
+            audited.put(field, Map.of("from", before, "to", after));
+        }
     }
 
     /**

@@ -8,11 +8,12 @@ import java.time.Instant;
 import java.util.UUID;
 
 public record BookSummary(UUID id, String title, String acronym, String slug, BookStatus status,
-                          PublicationState publicationState, String authorUsername, Instant createdAt,
-                          Instant updatedAt) {
+                          PublicationState publicationState, boolean moderated, String authorUsername,
+                          Instant createdAt, Instant updatedAt) {
 
     static BookSummary from(Book book) {
         return new BookSummary(book.getId(), book.getTitle(), book.getAcronym(), book.getSlug(), book.getStatus(),
-                book.getPublicationState(), book.getAuthor().getUsername(), book.getCreatedAt(), book.getUpdatedAt());
+                book.getPublicationState(), book.isModerated(), book.getAuthor().getUsername(), book.getCreatedAt(),
+                book.getUpdatedAt());
     }
 }

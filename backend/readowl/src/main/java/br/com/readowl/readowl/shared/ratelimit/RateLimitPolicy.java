@@ -20,7 +20,9 @@ public enum RateLimitPolicy {
     INTERACTION_ACCOUNT(60, Duration.ofMinutes(1)),
     INTERACTION_IP(300, Duration.ofMinutes(1)),
     VIEW_ACCOUNT(120, Duration.ofMinutes(1)),
-    VIEW_IP(600, Duration.ofMinutes(1));
+    VIEW_IP(600, Duration.ofMinutes(1)),
+    REPORT_ACCOUNT(10, Duration.ofHours(1)),
+    REPORT_IP(30, Duration.ofHours(1));
 
     private final int limit;
     private final Duration window;

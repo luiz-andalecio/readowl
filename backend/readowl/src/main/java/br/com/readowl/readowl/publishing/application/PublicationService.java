@@ -15,6 +15,7 @@ import br.com.readowl.readowl.shared.api.PageResponse;
 import br.com.readowl.readowl.shared.exception.ApiException;
 import br.com.readowl.readowl.user.application.SessionUser;
 import br.com.readowl.readowl.user.application.UserService;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -39,10 +40,11 @@ public class PublicationService {
     private final ChapterRevisionRepository revisions;
     private final UserService users;
     private final JsonMapper jsonMapper;
+    private final ApplicationEventPublisher events;
 
     PublicationService(BookAccess bookAccess, ChapterAccess chapterAccess, ChapterDraftService drafts,
                        ChapterRepository chapters, ChapterRevisionRepository revisions, UserService users,
-                       JsonMapper jsonMapper) {
+                       JsonMapper jsonMapper, ApplicationEventPublisher events) {
         this.bookAccess = bookAccess;
         this.chapterAccess = chapterAccess;
         this.drafts = drafts;
@@ -50,6 +52,7 @@ public class PublicationService {
         this.revisions = revisions;
         this.users = users;
         this.jsonMapper = jsonMapper;
+        this.events = events;
     }
 
     /**
@@ -58,6 +61,9 @@ public class PublicationService {
      */
     public ChapterView publishChapter(UUID chapterId, long draftVersion, SessionUser principal) {
         Chapter chapter = chapterAccess.requireManageableLocked(chapterId, principal);
+        if (chapter.isModerated()) {
+            throw ApiException.conflict("CHAPTER_UNDER_MODERATION", "Este capítulo foi ocultado pela moderação.");
+        }
         ChapterDraft draft = drafts.requireDraft(chapterId);
         ChapterDraftService.requireVersion(draft, draftVersion);
 
@@ -80,6 +86,9 @@ public class PublicationService {
         if (!wasPublished || !unchanged) {
             chapter.getBook().markChapterPublished(Instant.now());
         }
+        if (current == null && chapter.getBook().isPublished()) {
+            events.publishEvent(new ChapterFirstPublished(chapter.getBook().getId(), chapterId));
+        }
         return ChapterView.from(chapters.saveAndFlush(chapter));
     }
 
@@ -99,6 +108,9 @@ public class PublicationService {
 
     public BookDetails publishBook(UUID bookId, SessionUser principal) {
         Book book = bookAccess.requireManageableLocked(bookId, principal);
+        if (book.isModerated()) {
+            throw ApiException.conflict("BOOK_UNDER_MODERATION", "Esta obra foi ocultada pela moderação.");
+        }
         if (chapters.countByBookIdAndState(bookId, ChapterState.PUBLISHED) == 0) {
             throw ApiException.conflict("BOOK_WITHOUT_PUBLISHED_CHAPTERS", "Publique ao menos um capítulo antes da obra.");
         }
@@ -114,6 +126,59 @@ public class PublicationService {
         }
         chapters.flush();
         return BookDetails.from(book);
+    }
+
+    /**
+     * Como em uma despublicação, uma obra no ar não pode ficar sem capítulos: nesse caso, oculte a obra.
+     */
+    public void hideChapter(UUID chapterId) {
+        Chapter chapter = chapterAccess.requireLocked(chapterId);
+        if (chapter.isModerated()) {
+            throw alreadyHidden();
+        }
+        Book book = chapter.getBook();
+        if (chapter.isPublished() && book.isPublished()
+                && chapters.countByBookIdAndState(book.getId(), ChapterState.PUBLISHED) == 1) {
+            throw ApiException.conflict("LAST_PUBLISHED_CHAPTER",
+                    "Este é o último capítulo publicado da obra. Oculte a obra.");
+        }
+        chapter.hideByModeration(Instant.now());
+        chapters.flush();
+    }
+
+    public void restoreChapter(UUID chapterId) {
+        Chapter chapter = chapterAccess.requireLocked(chapterId);
+        if (!chapter.isModerated()) {
+            throw notHidden();
+        }
+        chapter.restoreFromModeration();
+        chapters.flush();
+    }
+
+    public void hideBook(UUID bookId) {
+        Book book = bookAccess.requireLocked(bookId);
+        if (book.isModerated()) {
+            throw alreadyHidden();
+        }
+        book.hideByModeration(Instant.now());
+        chapters.flush();
+    }
+
+    public void restoreBook(UUID bookId) {
+        Book book = bookAccess.requireLocked(bookId);
+        if (!book.isModerated()) {
+            throw notHidden();
+        }
+        book.restoreFromModeration();
+        chapters.flush();
+    }
+
+    private static ApiException alreadyHidden() {
+        return ApiException.conflict("ALREADY_HIDDEN", "Este conteúdo já está oculto.");
+    }
+
+    private static ApiException notHidden() {
+        return ApiException.conflict("NOT_HIDDEN", "Este conteúdo não está oculto pela moderação.");
     }
 
     @Transactional(readOnly = true)

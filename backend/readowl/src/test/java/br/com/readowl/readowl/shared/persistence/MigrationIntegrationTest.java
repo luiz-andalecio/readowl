@@ -42,7 +42,8 @@ class MigrationIntegrationTest {
                 "genres", "tags", "books", "book_genres", "book_tags",
                 "volumes", "chapters", "chapter_drafts", "chapter_revisions",
                 "book_follows", "book_ratings", "comments", "comment_likes", "chapter_views",
-                "banners", "rate_limit_buckets", "reading_progress", "chapter_reactions");
+                "banners", "rate_limit_buckets", "reading_progress", "chapter_reactions",
+                "outbox_events", "notifications", "reports", "audit_log");
     }
 
     @Test

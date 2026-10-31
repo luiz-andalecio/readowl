@@ -1,5 +1,6 @@
 package br.com.readowl.readowl.shared.security;
 
+import br.com.readowl.readowl.shared.audit.AuditTrail;
 import br.com.readowl.readowl.shared.exception.ApiProblems;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
@@ -24,9 +25,11 @@ import java.io.IOException;
 class ProblemSecurityHandler implements AuthenticationEntryPoint, AccessDeniedHandler {
 
     private final JsonMapper jsonMapper;
+    private final AuditTrail audit;
 
-    ProblemSecurityHandler(JsonMapper jsonMapper) {
+    ProblemSecurityHandler(JsonMapper jsonMapper, AuditTrail audit) {
         this.jsonMapper = jsonMapper;
+        this.audit = audit;
     }
 
     @Override
@@ -38,10 +41,12 @@ class ProblemSecurityHandler implements AuthenticationEntryPoint, AccessDeniedHa
     @Override
     public void handle(HttpServletRequest request, HttpServletResponse response,
                        AccessDeniedException accessDeniedException) throws IOException {
-        ProblemDetail problem = accessDeniedException instanceof CsrfException
-                ? ApiProblems.of(HttpStatus.FORBIDDEN, "CSRF_TOKEN_INVALID", "Token CSRF ausente ou inválido.")
-                : ApiProblems.of(HttpStatus.FORBIDDEN, "ACCESS_DENIED", "Você não tem permissão para esta operação.");
-        write(response, problem);
+        if (accessDeniedException instanceof CsrfException) {
+            write(response, ApiProblems.of(HttpStatus.FORBIDDEN, "CSRF_TOKEN_INVALID", "Token CSRF ausente ou inválido."));
+            return;
+        }
+        audit.recordDenied(request.getMethod(), request.getRequestURI());
+        write(response, ApiProblems.of(HttpStatus.FORBIDDEN, "ACCESS_DENIED", "Você não tem permissão para esta operação."));
     }
 
     private void write(HttpServletResponse response, ProblemDetail problem) throws IOException {

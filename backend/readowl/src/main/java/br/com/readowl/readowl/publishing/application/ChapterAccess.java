@@ -49,6 +49,14 @@ class ChapterAccess {
         return requireManageable(chapterId, principal);
     }
 
+    /**
+     * Para a moderação, cuja permissão vem do papel exigido pela rota.
+     */
+    Chapter requireLocked(UUID chapterId) {
+        bookAccess.lock(chapters.findBookIdById(chapterId).orElseThrow(ChapterAccess::chapterNotFound));
+        return chapters.findById(chapterId).orElseThrow(ChapterAccess::chapterNotFound);
+    }
+
     Volume requireManageableVolumeLocked(UUID volumeId, SessionUser principal) {
         bookAccess.lock(volumes.findBookIdById(volumeId).orElseThrow(ChapterAccess::volumeNotFound));
         Volume volume = volumes.findById(volumeId).orElseThrow(ChapterAccess::volumeNotFound);

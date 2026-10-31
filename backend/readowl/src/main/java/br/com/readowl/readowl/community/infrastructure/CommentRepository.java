@@ -37,6 +37,14 @@ public interface CommentRepository extends JpaRepository<Comment, UUID> {
             """)
     Page<Comment> findVisibleOnChapter(UUID chapterId, Pageable pageable);
 
+    @Query(value = "select c from Comment c join fetch c.user where c.book.id = :bookId",
+            countQuery = "select count(c) from Comment c where c.book.id = :bookId")
+    Page<Comment> findAllOnBook(UUID bookId, Pageable pageable);
+
+    @Query(value = "select c from Comment c join fetch c.user where c.user.id = :userId",
+            countQuery = "select count(c) from Comment c where c.user.id = :userId")
+    Page<Comment> findAllByUser(UUID userId, Pageable pageable);
+
     @Query("select c from Comment c where c.id = :id and c.deletedAt is null")
     Optional<Comment> findNotDeleted(UUID id);
 

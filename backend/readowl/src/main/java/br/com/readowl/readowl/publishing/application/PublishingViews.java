@@ -29,12 +29,13 @@ public final class PublishingViews {
     /**
      * Só as rotas de gerenciamento usam esta resposta: a contagem por capítulo é restrita ao autor e à administração.
      */
-    public record ChapterView(UUID id, String title, String slug, ChapterState state, int displayOrder, UUID volumeId,
-                              long viewCount, Instant createdAt, Instant updatedAt) {
+    public record ChapterView(UUID id, String title, String slug, ChapterState state, boolean moderated,
+                              int displayOrder, UUID volumeId, long viewCount, Instant createdAt, Instant updatedAt) {
 
         static ChapterView from(Chapter chapter) {
             return new ChapterView(chapter.getId(), chapter.getTitle(), chapter.getSlug(), chapter.getState(),
-                    chapter.getDisplayOrder(), chapter.getVolume() == null ? null : chapter.getVolume().getId(),
+                    chapter.isModerated(), chapter.getDisplayOrder(),
+                    chapter.getVolume() == null ? null : chapter.getVolume().getId(),
                     chapter.getViewCount(), chapter.getCreatedAt(), chapter.getUpdatedAt());
         }
     }

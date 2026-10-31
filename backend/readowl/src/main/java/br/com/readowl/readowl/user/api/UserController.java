@@ -34,6 +34,7 @@ class UserController {
     @PatchMapping("/me")
     MyProfileResponse updateMe(@AuthenticationPrincipal SessionUser principal,
                                @Valid @RequestBody UpdateProfileRequest body) {
-        return MyProfileResponse.from(users.updateProfile(principal.id(), body.name(), body.description()));
+        return MyProfileResponse.from(users.updateProfile(principal.id(), body.name(), body.description(),
+                body.emailNewChapters()));
     }
 }

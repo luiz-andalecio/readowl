@@ -7,6 +7,7 @@ import br.com.readowl.readowl.community.infrastructure.CommentRepository;
 import br.com.readowl.readowl.publishing.application.PublicChapters;
 import br.com.readowl.readowl.publishing.domain.Chapter;
 import br.com.readowl.readowl.shared.api.PageResponse;
+import br.com.readowl.readowl.shared.audit.AuditContext;
 import br.com.readowl.readowl.shared.exception.ApiException;
 import br.com.readowl.readowl.shared.ratelimit.RateLimitPolicy;
 import br.com.readowl.readowl.shared.ratelimit.RateLimiter;
@@ -59,7 +60,7 @@ public class CommentService {
             return new CommentResponse(comment.getId(), comment.getBook().getId(),
                     comment.getChapter() == null ? null : comment.getChapter().getId(), comment.getContent(),
                     new CommentAuthor(author.getUsername(), author.getName()),
-                    comment.getUpdatedAt().isAfter(comment.getCreatedAt()), comment.getCreatedAt(), comment.getUpdatedAt());
+                    comment.getEditedAt() != null, comment.getCreatedAt(), comment.getUpdatedAt());
         }
     }
 
@@ -98,11 +99,11 @@ public class CommentService {
         acquire(principal, clientIp);
         return transaction.execute(status -> {
             Comment comment = comments.findNotDeleted(commentId).orElseThrow(CommentService::notFound);
-            if (!principal.isAdministrator()) {
+            if (!canOverride(comment, principal)) {
                 requireVisible(comment);
                 requireOwner(comment, principal);
             }
-            comment.edit(text);
+            comment.edit(text, Instant.now());
             return CommentResponse.from(comments.saveAndFlush(comment));
         });
     }
@@ -113,7 +114,7 @@ public class CommentService {
     public void delete(UUID commentId, SessionUser principal) {
         transaction.executeWithoutResult(status -> {
             Comment comment = comments.findNotDeleted(commentId).orElseThrow(CommentService::notFound);
-            if (!principal.isAdministrator() && !isOwner(comment, principal)) {
+            if (!isOwner(comment, principal) && !canOverride(comment, principal)) {
                 requireVisible(comment);
                 requireOwner(comment, principal);
             }
@@ -151,12 +152,26 @@ public class CommentService {
         return text;
     }
 
+    private static boolean canOverride(Comment comment, SessionUser principal) {
+        if (!principal.isAdministrator()) {
+            return false;
+        }
+        if (!isOwner(comment, principal)) {
+            AuditContext.markOverride();
+        }
+        return true;
+    }
+
     private static void requireVisible(Comment comment) {
-        Chapter chapter = comment.getChapter();
-        if (!comment.getUser().isActive() || !PublicBooks.isPublic(comment.getBook())
-                || (chapter != null && !chapter.isPublished())) {
+        if (!isVisible(comment)) {
             throw notFound();
         }
+    }
+
+    static boolean isVisible(Comment comment) {
+        Chapter chapter = comment.getChapter();
+        return comment.getUser().isActive() && PublicBooks.isPublic(comment.getBook())
+                && (chapter == null || chapter.isPublished());
     }
 
     private static void requireOwner(Comment comment, SessionUser principal) {
@@ -169,7 +184,7 @@ public class CommentService {
         return comment.getUser().getId().equals(principal.id());
     }
 
-    private static ApiException notFound() {
+    static ApiException notFound() {
         return ApiException.notFound("COMMENT_NOT_FOUND", "Comentário não encontrado.");
     }
 }

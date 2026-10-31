@@ -3,12 +3,14 @@ package br.com.readowl.readowl.user.api;
 import br.com.readowl.readowl.shared.api.PageRequests;
 import br.com.readowl.readowl.shared.api.PageResponse;
 import br.com.readowl.readowl.user.application.AdminUserService;
+import br.com.readowl.readowl.user.application.SessionUser;
 import br.com.readowl.readowl.user.domain.Role;
 import br.com.readowl.readowl.user.domain.User;
 import br.com.readowl.readowl.user.domain.UserStatus;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.Pattern;
 import jakarta.validation.constraints.Size;
+import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PatchMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -71,8 +73,9 @@ class AdminUserController {
     }
 
     @PatchMapping("/{id}")
-    AdminUserResponse update(@PathVariable UUID id, @Valid @RequestBody UpdateUserRequest body) {
+    AdminUserResponse update(@AuthenticationPrincipal SessionUser actor, @PathVariable UUID id,
+                             @Valid @RequestBody UpdateUserRequest body) {
         return AdminUserResponse.from(users.update(id, new AdminUserService.UserChanges(
-                body.name(), body.username(), body.description(), body.role(), body.status())));
+                body.name(), body.username(), body.description(), body.role(), body.status()), actor));
     }
 }

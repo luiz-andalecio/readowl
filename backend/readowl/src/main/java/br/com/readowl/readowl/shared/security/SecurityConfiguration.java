@@ -41,6 +41,7 @@ class SecurityConfiguration {
                         // Editar usuários é exclusivo do root; o restante da administração, de admin e root.
                         .requestMatchers(HttpMethod.PATCH, "/api/v1/admin/users/**").hasRole("ROOT")
                         .requestMatchers("/api/v1/admin/**").hasAnyRole("ADMIN", "ROOT")
+                        .requestMatchers("/api/v1/moderation/**").hasAnyRole("MODERATOR", "ADMIN", "ROOT")
                         // Antes da regra pública de perfis, que também casaria com "me".
                         .requestMatchers("/api/v1/users/me", "/api/v1/users/me/**").authenticated()
                         .requestMatchers(HttpMethod.GET,

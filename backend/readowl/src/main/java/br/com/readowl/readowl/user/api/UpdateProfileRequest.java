@@ -8,5 +8,6 @@ import jakarta.validation.constraints.Size;
  */
 record UpdateProfileRequest(
         @Size(max = 100) @Pattern(regexp = "(?s).*\\S.*", message = "não deve estar em branco") String name,
-        @Size(max = 2000) String description) {
+        @Size(max = 2000) String description,
+        Boolean emailNewChapters) {
 }

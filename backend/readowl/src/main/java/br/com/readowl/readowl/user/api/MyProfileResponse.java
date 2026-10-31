@@ -7,10 +7,11 @@ import java.time.Instant;
 import java.util.UUID;
 
 record MyProfileResponse(UUID id, String username, String name, String email, String description, Role role,
-                         boolean emailVerified, Instant createdAt) {
+                         boolean emailVerified, boolean emailNewChapters, Instant createdAt) {
 
     static MyProfileResponse from(User user) {
         return new MyProfileResponse(user.getId(), user.getUsername(), user.getName(), user.getEmail(),
-                user.getDescription(), user.getRole(), user.isEmailVerified(), user.getCreatedAt());
+                user.getDescription(), user.getRole(), user.isEmailVerified(), user.isEmailNewChapters(),
+                user.getCreatedAt());
     }
 }

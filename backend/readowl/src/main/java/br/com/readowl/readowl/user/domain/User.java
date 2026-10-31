@@ -55,6 +55,9 @@ public class User extends BaseEntity {
 
     private Instant emailVerifiedAt;
 
+    @Column(nullable = false)
+    private boolean emailNewChapters;
+
     public User(String name, String username, String email, String passwordHash) {
         this.name = name.trim();
         this.username = normalizeUsername(username);
@@ -86,6 +89,10 @@ public class User extends BaseEntity {
         if (emailVerifiedAt == null) {
             emailVerifiedAt = at;
         }
+    }
+
+    public void changeEmailNewChapters(boolean enabled) {
+        this.emailNewChapters = enabled;
     }
 
     public void changeUsername(String username) {
