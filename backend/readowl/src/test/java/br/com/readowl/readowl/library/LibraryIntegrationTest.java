@@ -101,6 +101,20 @@ class LibraryIntegrationTest {
     }
 
     @Test
+    void simultaneousUnfollowsAreNotAnError() {
+        String book = books.publishedBook(newUser());
+        ApiClient reader = newUser();
+        reader.put(LIBRARY + "/" + book, body());
+
+        List<CompletableFuture<ApiClient.Response>> requests = List.of(
+                CompletableFuture.supplyAsync(() -> reader.delete(LIBRARY + "/" + book)),
+                CompletableFuture.supplyAsync(() -> reader.delete(LIBRARY + "/" + book)),
+                CompletableFuture.supplyAsync(() -> reader.delete(LIBRARY + "/" + book)));
+
+        assertThat(requests).allSatisfy(request -> assertThat(request.join().status()).isEqualTo(204));
+    }
+
+    @Test
     void privateBooksCannotBeFollowedAndLookLikeTheyDoNotExist() {
         String draft = books.createBook(newUser());
         ApiClient reader = newUser();

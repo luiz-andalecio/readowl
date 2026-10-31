@@ -28,7 +28,7 @@ Listas paginadas aceitam `?page=0&size=20&sort=-updatedAt`. `page` começa em 0 
 |---|---|
 | `USER` | Gerencia as próprias obras e o próprio perfil |
 | `MODERATOR` | Igual a `USER` por enquanto: as ações de moderação ainda não existem |
-| `ADMIN` | Tudo o que o `USER` faz, sobre as obras de **qualquer** autor, além de gêneros e tags. Vê usuários, mas não os edita |
+| `ADMIN` | Tudo o que o `USER` faz, sobre as obras e os comentários de **qualquer** pessoa, além de gêneros e tags. Vê usuários, mas não os edita |
 | `ROOT` | Tudo o que o `ADMIN` faz, e edita usuários |
 
 ## Erros
@@ -425,6 +425,7 @@ Vale o mesmo para capítulos: o slug segue o título. Títulos repetidos dentro 
   "releaseFrequency": "Semanal",
   "status": "ONGOING",
   "publicationState": "DRAFT",
+  "viewCount": 0,
   "authorUsername": "maria-leitora",
   "genres": [{ "id": "019f...", "name": "Fantasia" }],
   "tags": [{ "id": "019f...", "name": "Magia" }],
@@ -661,6 +662,119 @@ Registra onde o usuário parou. Não exige seguir a obra. A última leitura vale
 
 Responde 404 `CHAPTER_NOT_FOUND` se o capítulo não pertencer à obra ou não estiver publicado.
 
+## Comunidade
+
+As leituras marcadas como públicas não exigem sessão, não criam sessão e não emitem cookies. As alterações exigem sessão e CSRF. Conteúdo fora do ar responde 404 `BOOK_NOT_FOUND` ou `CHAPTER_NOT_FOUND`, como nas rotas de leitura.
+
+Contas suspensas deixam de aparecer: seus comentários somem, e suas notas e reações saem dos totais. Tudo volta se a conta for reativada.
+
+Limites por minuto, além dos quais a resposta é 429 `RATE_LIMITED`:
+
+| Ação | Por conta | Por IP |
+|---|---|---|
+| Criar ou editar comentário | 10 | 60 |
+| Avaliar ou reagir | 60 | 300 |
+| Registrar visita | 120 | 600 |
+
+### Comentários
+
+**O conteúdo é texto puro e pode conter qualquer coisa, inclusive `<script>`. Exiba-o sempre como texto, nunca com `innerHTML`.** As quebras de linha são preservadas.
+
+`GET /books/{bookId}/comments` e `GET /chapters/{chapterId}/comments` são públicos e paginados. A lista da obra não inclui os comentários dos capítulos. `sort`: `createdAt`, com padrão `-createdAt`.
+
+**200**, com `content` neste formato:
+```json
+{
+  "id": "019f...",
+  "bookId": "019f...",
+  "chapterId": null,
+  "content": "Gostei muito!\nQuando sai o próximo?",
+  "author": { "username": "maria-leitora", "name": "Maria Leitora" },
+  "edited": false,
+  "createdAt": "2026-10-31T19:32:15.393101Z",
+  "updatedAt": "2026-10-31T19:32:15.393101Z"
+}
+```
+
+`POST /books/{bookId}/comments` e `POST /chapters/{chapterId}/comments` criam um comentário. **201**, com o corpo acima.
+
+```json
+{ "content": "Gostei muito!" }
+```
+
+`content` tem de 1 a 5000 caracteres, sem contar espaços nas pontas.
+
+`PATCH /comments/{id}`, com o mesmo corpo, altera o texto. **200**, com o corpo acima e `edited: true`. Quem comentou edita enquanto o conteúdo estiver no ar; `ADMIN` e `ROOT` editam sempre. **A resposta não indica quem editou.**
+
+`DELETE /comments/{id}` remove o comentário da página. **204**, sem corpo. Quem comentou pode excluir mesmo com o conteúdo fora do ar; `ADMIN` e `ROOT` também. O autor da obra não exclui comentários de terceiros. **O texto continua guardado no banco para a moderação.**
+
+| Status | `code` | Quando |
+|---|---|---|
+| 400 | `INVALID_COMMENT` | O texto tem caracteres de controle, exceto quebras de linha e tabulação |
+| 403 | `ACCESS_DENIED` | O comentário é de outra pessoa |
+| 404 | `COMMENT_NOT_FOUND` | Inexistente, já excluído ou fora do ar |
+| 409 | `DUPLICATE_COMMENT` | O usuário enviou o mesmo texto no mesmo lugar há menos de 10 minutos |
+
+### Avaliações
+
+Cada usuário tem uma nota de 1 a 5 por obra. O autor não avalia a própria obra.
+
+`GET /books/{bookId}/rating` é público. **200**, com `average` igual a `null` enquanto não houver notas:
+```json
+{ "average": 3.67, "count": 3 }
+```
+
+`GET /books/{bookId}/rating/me` traz a nota do usuário, ou `null` em `score`. **200**:
+```json
+{ "score": 4, "summary": { "average": 3.67, "count": 3 } }
+```
+
+`PUT /books/{bookId}/rating/me` grava ou troca a nota. **200**, com o corpo acima.
+
+```json
+{ "score": 4 }
+```
+
+`DELETE /books/{bookId}/rating/me` remove a nota, mesmo com a obra fora do ar. Repetir não é erro. **204**, sem corpo.
+
+| Status | `code` | Quando |
+|---|---|---|
+| 403 | `OWN_BOOK_RATING` | O usuário é o autor da obra |
+
+### Reações
+
+Cada usuário tem uma reação por capítulo, e reagir de novo troca a anterior. O autor não reage ao próprio capítulo. Tipos: `LIKE`, `LOVE`, `LAUGH`, `WOW`, `SAD` e `ANGRY`. Tipo desconhecido recebe 400 `BAD_REQUEST`.
+
+`GET /chapters/{chapterId}/reactions` é público. `counts` traz sempre todos os tipos. **200**:
+```json
+{ "counts": { "LIKE": 2, "LOVE": 1, "LAUGH": 0, "WOW": 0, "SAD": 0, "ANGRY": 0 }, "total": 3 }
+```
+
+`GET /chapters/{chapterId}/reactions/me` traz a reação do usuário, ou `null` em `type`. **200**:
+```json
+{ "type": "LIKE", "summary": { "counts": { "LIKE": 2, "LOVE": 1, "LAUGH": 0, "WOW": 0, "SAD": 0, "ANGRY": 0 }, "total": 3 } }
+```
+
+`PUT /chapters/{chapterId}/reactions/me` grava ou troca a reação. **200**, com o corpo acima.
+
+```json
+{ "type": "LIKE" }
+```
+
+`DELETE /chapters/{chapterId}/reactions/me` remove a reação, mesmo com o capítulo fora do ar. Repetir não é erro. **204**, sem corpo.
+
+| Status | `code` | Quando |
+|---|---|---|
+| 403 | `OWN_CHAPTER_REACTION` | O usuário é o autor da obra |
+
+### `POST /chapters/{chapterId}/views`
+
+Registra que o usuário abriu o capítulo. Envie um corpo vazio. **204**, sem corpo, tenha a visita contado ou não.
+
+**Chame no navegador, depois de abrir o capítulo e só com o usuário logado.** O SSR não registra visitas, e abrir a rota de leitura não conta nada. Visitantes recebem 401.
+
+O servidor decide o que conta: uma visita por usuário e capítulo a cada 2 minutos, e nunca as do autor da obra. O total da obra é público em `viewCount`. O total de cada capítulo só aparece em `GET /books/{id}/contents`, para o autor e a administração.
+
 ## Volumes e capítulos
 
 Mesmas regras de acesso das obras. Volumes são opcionais: um capítulo pode ficar direto na obra.
@@ -678,6 +792,7 @@ Mesmas regras de acesso das obras. Volumes são opcionais: um capítulo pode fic
     "state": "DRAFT",
     "displayOrder": 1,
     "volumeId": "019f...",
+    "viewCount": 0,
     "createdAt": "2026-10-31T19:32:15.393101Z",
     "updatedAt": "2026-10-31T19:32:15.393101Z"
   }]
@@ -878,6 +993,8 @@ Nada disso foi alterado no projeto Angular.
 | Imagens | Tratar obra e perfil sem capa ou avatar até a etapa de mídia |
 | Editor | Adotar o Tiptap com as extensões da [lista do formato](#formato-do-documento-versão-1). Ele ainda não está no `package.json` |
 | Leitura | Estilizar as classes `text-left`, `text-center`, `text-right` e `text-justify` |
+| Comentários | Exibir como texto, sem `innerHTML`, preservando as quebras de linha |
+| Visitas | Chamar `POST /chapters/{id}/views` no navegador ao abrir um capítulo, só com o usuário logado |
 
 ### Pontos a alinhar
 
@@ -888,6 +1005,5 @@ Nada disso foi alterado no projeto Angular.
 
 Estes grupos ainda não existem e seus caminhos podem mudar:
 
-- **Comunidade:** comentários, avaliações, reações, visualizações.
 - **Operação:** notificações, denúncias, moderação, administração.
 - **Depois do núcleo:** respostas e curtidas em comentários, banners, upload de imagens.

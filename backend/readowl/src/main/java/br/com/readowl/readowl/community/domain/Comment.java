@@ -56,4 +56,19 @@ public class Comment extends BaseEntity {
         this.chapter = chapter;
         this.parent = parent;
     }
+
+    public boolean isDeleted() {
+        return deletedAt != null;
+    }
+
+    public void edit(String content) {
+        this.content = content;
+    }
+
+    /**
+     * O texto é mantido para a moderação, mas deixa de ser exibido.
+     */
+    public void delete(Instant at) {
+        this.deletedAt = at;
+    }
 }

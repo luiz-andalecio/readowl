@@ -11,7 +11,7 @@ import java.util.List;
 import java.util.UUID;
 
 public record BookDetails(UUID id, String title, String acronym, String slug, String synopsis, String releaseFrequency,
-                          BookStatus status, PublicationState publicationState, String authorUsername,
+                          BookStatus status, PublicationState publicationState, long viewCount, String authorUsername,
                           List<TaxonomyItem> genres, List<TaxonomyItem> tags, Instant createdAt, Instant updatedAt) {
 
     /**
@@ -19,7 +19,7 @@ public record BookDetails(UUID id, String title, String acronym, String slug, St
      */
     public static BookDetails from(Book book) {
         return new BookDetails(book.getId(), book.getTitle(), book.getAcronym(), book.getSlug(), book.getSynopsis(),
-                book.getReleaseFrequency(), book.getStatus(), book.getPublicationState(),
+                book.getReleaseFrequency(), book.getStatus(), book.getPublicationState(), book.getViewCount(),
                 book.getAuthor().getUsername(),
                 book.getGenres().stream().map(TaxonomyItem::from)
                         .sorted(Comparator.comparing(TaxonomyItem::name)).toList(),

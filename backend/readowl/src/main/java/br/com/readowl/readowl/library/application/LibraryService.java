@@ -84,7 +84,7 @@ public class LibraryService {
      * Funciona mesmo com a obra fora do ar, e o progresso é mantido para quando o usuário voltar.
      */
     public void unfollow(UUID bookId, SessionUser principal) {
-        follows.deleteById(new BookFollowId(principal.id(), bookId));
+        follows.unfollow(principal.id(), bookId);
     }
 
     public LibraryState recordProgress(UUID bookId, UUID chapterId, int percent, SessionUser principal) {

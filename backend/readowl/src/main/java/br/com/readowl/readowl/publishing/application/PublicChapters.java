@@ -1,5 +1,6 @@
 package br.com.readowl.readowl.publishing.application;
 
+import br.com.readowl.readowl.book.application.PublicBooks;
 import br.com.readowl.readowl.publishing.domain.Chapter;
 import br.com.readowl.readowl.publishing.infrastructure.ChapterRepository;
 import br.com.readowl.readowl.shared.exception.ApiException;
@@ -28,6 +29,19 @@ public class PublicChapters {
     public Chapter requirePublished(UUID bookId, UUID chapterId) {
         return chapters.findByIdAndBookId(chapterId, bookId)
                 .filter(Chapter::isPublished)
-                .orElseThrow(() -> ApiException.notFound("CHAPTER_NOT_FOUND", "Capítulo não encontrado."));
+                .orElseThrow(PublicChapters::notFound);
+    }
+
+    /**
+     * Para quem só tem o identificador do capítulo. Um capítulo de obra fora do ar responde como inexistente.
+     */
+    public Chapter requirePublic(UUID chapterId) {
+        return chapters.findById(chapterId)
+                .filter(chapter -> chapter.isPublished() && PublicBooks.isPublic(chapter.getBook()))
+                .orElseThrow(PublicChapters::notFound);
+    }
+
+    private static ApiException notFound() {
+        return ApiException.notFound("CHAPTER_NOT_FOUND", "Capítulo não encontrado.");
     }
 }

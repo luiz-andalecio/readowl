@@ -87,7 +87,11 @@ public final class ApiClient {
         return HttpRequest.newBuilder(URI.create(baseUrl + path));
     }
 
-    private HttpRequest.Builder withCsrf(HttpRequest.Builder request) {
+    /**
+     * Pedidos paralelos de um mesmo cliente não podem buscar o primeiro token ao mesmo tempo: cada um
+     * receberia um diferente, algo que o Angular não faz.
+     */
+    private synchronized HttpRequest.Builder withCsrf(HttpRequest.Builder request) {
         get("/api/v1/auth/csrf");
         return request.header("X-XSRF-TOKEN", cookie(CSRF_COOKIE).orElseThrow());
     }

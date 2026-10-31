@@ -2,7 +2,7 @@
 
 API REST da plataforma Readowl, em Java 25 e Spring Boot 4.1.2, com PostgreSQL 18.
 
-> **Estado atual: contas, publicação e leitura.** Além da fundação (modelo de dados, migrations, erros e segurança base), já funcionam contas, login, recuperação de senha, login com Google, perfil, obras, gêneros, tags, volumes, capítulos, rascunhos, publicação, administração, leitura pública, catálogo com busca e biblioteca. A comunidade e a operação entram nas próximas etapas. O contrato HTTP vigente está em [docs/backend-api-contract.md](../../docs/backend-api-contract.md).
+> **Estado atual: contas, publicação, leitura e comunidade.** Além da fundação (modelo de dados, migrations, erros e segurança base), já funcionam contas, login, recuperação de senha, login com Google, perfil, obras, gêneros, tags, volumes, capítulos, rascunhos, publicação, administração, leitura pública, catálogo com busca, biblioteca, comentários, avaliações, reações e visualizações. A operação entra na próxima etapa. O contrato HTTP vigente está em [docs/backend-api-contract.md](../../docs/backend-api-contract.md).
 
 ## Pré-requisitos
 
@@ -137,6 +137,9 @@ Os testes de integração usam PostgreSQL real, de duas formas:
 | `CatalogIntegrationTest` | Visibilidade, busca sem acentos e com erros de digitação, filtros, ordenação, texto hostil na busca, uso dos índices |
 | `ReadingIntegrationTest` | Leitura sem sessão, nada privado nas respostas, rascunho separado do publicado, navegação entre volumes |
 | `LibraryIntegrationTest` | Seguir obras, progresso de leitura, isolamento entre usuários, cascatas |
+| `CommentIntegrationTest` | Comentários em obras e capítulos, permissões, texto hostil, repetição, limites, contas suspensas, cascatas |
+| `RatingAndReactionIntegrationTest` | Unicidade por usuário, resumo calculado no servidor, valores forjados, autor impedido, concorrência, limites |
+| `ChapterViewIntegrationTest` | Janela de 2 minutos, autor não conta, concorrência entre usuários e com a publicação, contagem por capítulo restrita |
 
 Os testes de API usam servidor HTTP real, cookies reais e sessões no PostgreSQL. Só o `MailSender` é substituído. O Google é simulado por um servidor local com ID tokens assinados, então **o fluxo com o Google real depende de credenciais e ainda precisa ser conferido manualmente**.
 
@@ -144,7 +147,7 @@ Os testes de API usam servidor HTTP real, cookies reais e sessões no PostgreSQL
 
 ## Arquitetura
 
-Monólito modular por domínio, em `br.com.readowl.readowl`. Cada módulo tem as camadas `api`, `application`, `domain` e `infrastructure` apenas quando há conteúdo para elas; hoje, só `domain` existe.
+Monólito modular por domínio, em `br.com.readowl.readowl`. Cada módulo tem as camadas `api`, `application`, `domain` e `infrastructure` apenas quando há conteúdo para elas.
 
 | Módulo | Responsabilidade |
 |---|---|
@@ -154,8 +157,8 @@ Monólito modular por domínio, em `br.com.readowl.readowl`. Cada módulo tem as
 | `genre` | Gêneros e tags |
 | `book` | Obras |
 | `publishing` | Volumes, capítulos, rascunhos e revisões publicadas |
-| `library` | Obras seguidas |
-| `community` | Comentários, curtidas, avaliações e visualizações |
+| `library` | Obras seguidas e progresso de leitura |
+| `community` | Comentários, avaliações, reações e visualizações |
 | `banner` | Banners |
 
 As dependências seguem uma direção, sem ciclos: `publishing` e `library` conhecem `book`; `book` conhece `user` e `genre`; `community` conhece `publishing`, `book` e `user`.
@@ -189,6 +192,12 @@ As dependências seguem uma direção, sem ciclos: `publishing` e `library` conh
 - **Busca:** combina texto completo em português (`search_vector`, com peso maior no título), trechos e similaridade no título (`pg_trgm`) e a sigla. Ignora acentos por `immutable_unaccent`.
 - **Extensões:** a migration `V9` cria `unaccent` e `pg_trgm`. Como são extensões confiáveis, basta o usuário da aplicação ser dono do banco.
 - **Consulta do catálogo:** `CatalogQueries` usa SQL porque os filtros são combináveis. Valores vão sempre como parâmetros, e a ordenação vem de uma lista fixa. Fica em `publishing`, e não em `book`, porque também conta capítulos publicados.
+
+### Comunidade
+
+- **Visualizações:** um único comando SQL (`ChapterViewRepository.count`) decide e incrementa, o que mantém a contagem correta entre instâncias. Ele altera a obra antes do capítulo, na mesma ordem da publicação, para evitar deadlocks. Não altera `version`, então uma visita não causa conflito na edição do autor. Nenhum IP é guardado.
+- **Avaliações e reações:** gravadas por upsert e sempre somadas a partir das linhas, sem contadores que possam divergir. O cliente só envia a própria nota ou reação.
+- **Comentários:** texto puro, exibido pelo frontend sem interpretar HTML. A exclusão é lógica, e o texto fica para a moderação. A checagem de repetição usa um bloqueio consultivo por usuário, liberado ao fim da transação.
 
 ### Produção
 

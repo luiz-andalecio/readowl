@@ -23,6 +23,13 @@ public interface BookFollowRepository extends JpaRepository<BookFollow, BookFoll
     void follow(UUID userId, UUID bookId);
 
     /**
+     * Deixar de seguir duas vezes, ou em duas abas ao mesmo tempo, também não é erro.
+     */
+    @Modifying
+    @Query(value = "DELETE FROM book_follows WHERE user_id = :userId AND book_id = :bookId", nativeQuery = true)
+    void unfollow(UUID userId, UUID bookId);
+
+    /**
      * Uma obra que saiu do ar não aparece, mas continua seguida: volta à lista se for republicada.
      */
     @Query(value = """

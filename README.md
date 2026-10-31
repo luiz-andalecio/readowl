@@ -4,7 +4,7 @@ A web platform for publishing and reading books, focused on supporting amateur l
 
 The project will be built with **Java, Spring Boot, Angular, TypeScript, and PostgreSQL**, featuring a responsive Portuguese-language interface and free publishing as its initial offering.
 
-> **Status:** the backend foundation, accounts, publishing, administration, public reading, catalog, and library are implemented; community and operations endpoints are not. See [backend/readowl/README.md](backend/readowl/README.md) for what runs today and [docs/backend-api-contract.md](docs/backend-api-contract.md) for the current HTTP contract. Unless stated otherwise, the features and commands in this document describe the project to be implemented.
+> **Status:** the backend foundation, accounts, publishing, administration, public reading, catalog, library, and community (comments, ratings, reactions, and views) are implemented; operations endpoints are not. See [backend/readowl/README.md](backend/readowl/README.md) for what runs today and [docs/backend-api-contract.md](docs/backend-api-contract.md) for the current HTTP contract. Unless stated otherwise, the features and commands in this document describe the project to be implemented.
 
 ---
 
