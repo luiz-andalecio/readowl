@@ -70,6 +70,12 @@
 			<groupId>org.flywaydb</groupId>
 			<artifactId>flyway-database-postgresql</artifactId>
 		</dependency>
+		<!-- Exigido pelo Argon2PasswordEncoder. Não é gerenciado pelo BOM do Spring Boot. -->
+		<dependency>
+			<groupId>org.bouncycastle</groupId>
+			<artifactId>bcprov-jdk18on</artifactId>
+			<version>1.86</version>
+		</dependency>
 
 		<dependency>
 			<groupId>org.springframework.boot</groupId>

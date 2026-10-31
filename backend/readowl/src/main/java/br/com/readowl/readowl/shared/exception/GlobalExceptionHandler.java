@@ -31,6 +31,13 @@ public class GlobalExceptionHandler extends ResponseEntityExceptionHandler {
         return ApiProblems.of(ex.getStatus(), ex.getCode(), ex.getMessage());
     }
 
+    @ExceptionHandler(RateLimitExceededException.class)
+    ResponseEntity<ProblemDetail> handleRateLimit(RateLimitExceededException ex) {
+        return ResponseEntity.status(ex.getStatus())
+                .header(HttpHeaders.RETRY_AFTER, String.valueOf(ex.getRetryAfterSeconds()))
+                .body(ApiProblems.of(ex.getStatus(), ex.getCode(), ex.getMessage()));
+    }
+
     @ExceptionHandler(OptimisticLockingFailureException.class)
     ProblemDetail handleOptimisticLock(OptimisticLockingFailureException ex) {
         return ApiProblems.of(HttpStatus.CONFLICT, "CONCURRENT_MODIFICATION",

@@ -56,9 +56,51 @@ public class User extends BaseEntity {
     private Instant emailVerifiedAt;
 
     public User(String name, String username, String email, String passwordHash) {
-        this.name = name;
-        this.username = username.trim().toLowerCase(Locale.ROOT);
-        this.email = email.trim().toLowerCase(Locale.ROOT);
+        this.name = name.trim();
+        this.username = normalizeUsername(username);
+        this.email = normalizeEmail(email);
         this.passwordHash = passwordHash;
+    }
+
+    public static String normalizeEmail(String email) {
+        return email.trim().toLowerCase(Locale.ROOT);
+    }
+
+    public static String normalizeUsername(String username) {
+        return username.trim().toLowerCase(Locale.ROOT);
+    }
+
+    public boolean isActive() {
+        return status == UserStatus.ACTIVE;
+    }
+
+    public boolean isEmailVerified() {
+        return emailVerifiedAt != null;
+    }
+
+    public boolean hasPassword() {
+        return passwordHash != null;
+    }
+
+    public void verifyEmail(Instant at) {
+        if (emailVerifiedAt == null) {
+            emailVerifiedAt = at;
+        }
+    }
+
+    public void changePasswordHash(String passwordHash) {
+        this.passwordHash = passwordHash;
+    }
+
+    /**
+     * Atualiza apenas os campos informados. Uma descrição em branco é removida.
+     */
+    public void updateProfile(String name, String description) {
+        if (name != null) {
+            this.name = name.trim();
+        }
+        if (description != null) {
+            this.description = description.isBlank() ? null : description.trim();
+        }
     }
 }

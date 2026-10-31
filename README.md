@@ -4,7 +4,7 @@ A web platform for publishing and reading books, focused on supporting amateur l
 
 The project will be built with **Java, Spring Boot, Angular, TypeScript, and PostgreSQL**, featuring a responsive Portuguese-language interface and free publishing as its initial offering.
 
-> **Status:** the backend foundation is implemented (data model, migrations, base security, error handling); business endpoints are not. See [backend/readowl/README.md](backend/readowl/README.md) for what runs today and [docs/backend-api-contract.md](docs/backend-api-contract.md) for the current HTTP contract. Unless stated otherwise, the features and commands in this document describe the project to be implemented.
+> **Status:** the backend foundation and the accounts module are implemented (data model, migrations, security, registration, email verification, login, password recovery, Google sign-in, and profiles); books, reading, and community endpoints are not. See [backend/readowl/README.md](backend/readowl/README.md) for what runs today and [docs/backend-api-contract.md](docs/backend-api-contract.md) for the current HTTP contract. Unless stated otherwise, the features and commands in this document describe the project to be implemented.
 
 ---
 
@@ -161,7 +161,7 @@ The POM also includes these test-scoped dependencies:
 - `org.testcontainers:testcontainers-junit-jupiter`
 - `org.testcontainers:testcontainers-postgresql`
 
-Dependency declarations provide tooling support; they do not mean the corresponding features or tests have been implemented. S3 integration and the cryptographic provider required by the selected Argon2id implementation are not declared in the POM and remain implementation tasks.
+Dependency declarations provide tooling support; they do not mean the corresponding features or tests have been implemented. S3 integration is not declared in the POM and remains an implementation task. Bouncy Castle (`bcprov-jdk18on`) provides the Argon2id implementation and is the one dependency whose version is pinned in the POM, because the Spring Boot BOM does not manage it.
 
 ### Session Store
 
