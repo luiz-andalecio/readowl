@@ -34,9 +34,9 @@ public class SqlFixtures {
     public UUID book(UUID authorId) {
         UUID id = UUID.randomUUID();
         jdbc.update("""
-                INSERT INTO books (id, version, created_at, updated_at, title, slug, synopsis, status,
+                INSERT INTO books (id, version, created_at, updated_at, title, acronym, slug, synopsis, status,
                                    publication_state, author_id)
-                VALUES (?, 0, now(), now(), 'Obra', ?, 'Sinopse', 'ONGOING', 'DRAFT', ?)
+                VALUES (?, 0, now(), now(), 'Obra', 'TST', ?, 'Sinopse', 'ONGOING', 'DRAFT', ?)
                 """, id, "obra-" + shortId(), authorId);
         return id;
     }

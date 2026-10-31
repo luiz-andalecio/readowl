@@ -38,12 +38,17 @@ class SecurityConfiguration {
                 .authorizeHttpRequests(requests -> requests
                         .dispatcherTypeMatchers(DispatcherType.ERROR).permitAll()
                         .requestMatchers(EndpointRequest.to(HealthEndpoint.class)).permitAll()
+                        // Editar usuários é exclusivo do root; o restante da administração, de admin e root.
+                        .requestMatchers(HttpMethod.PATCH, "/api/v1/admin/users/**").hasRole("ROOT")
+                        .requestMatchers("/api/v1/admin/**").hasAnyRole("ADMIN", "ROOT")
                         // Antes da regra pública de perfis, que também casaria com "me".
                         .requestMatchers("/api/v1/users/me", "/api/v1/users/me/**").authenticated()
                         .requestMatchers(HttpMethod.GET,
                                 "/api/v1/auth/csrf",
                                 "/api/v1/auth/session",
-                                "/api/v1/users/{username}").permitAll()
+                                "/api/v1/users/{username}",
+                                "/api/v1/genres",
+                                "/api/v1/tags").permitAll()
                         .requestMatchers(HttpMethod.POST,
                                 "/api/v1/auth/register",
                                 "/api/v1/auth/verify-email",

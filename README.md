@@ -4,7 +4,7 @@ A web platform for publishing and reading books, focused on supporting amateur l
 
 The project will be built with **Java, Spring Boot, Angular, TypeScript, and PostgreSQL**, featuring a responsive Portuguese-language interface and free publishing as its initial offering.
 
-> **Status:** the backend foundation and the accounts module are implemented (data model, migrations, security, registration, email verification, login, password recovery, Google sign-in, and profiles); books, reading, and community endpoints are not. See [backend/readowl/README.md](backend/readowl/README.md) for what runs today and [docs/backend-api-contract.md](docs/backend-api-contract.md) for the current HTTP contract. Unless stated otherwise, the features and commands in this document describe the project to be implemented.
+> **Status:** the backend foundation, accounts, publishing, and administration are implemented (data model, migrations, security, registration, login, password recovery, Google sign-in, profiles, books, genres, tags, volumes, chapters, drafts, and publication); public reading, catalog, and community endpoints are not. See [backend/readowl/README.md](backend/readowl/README.md) for what runs today and [docs/backend-api-contract.md](docs/backend-api-contract.md) for the current HTTP contract. Unless stated otherwise, the features and commands in this document describe the project to be implemented.
 
 ---
 
@@ -60,7 +60,7 @@ Additional contributions and responsibilities will be documented as the project 
 - Catalog with search, genre and tag filters, work status, and sorting.
 - Book pages with synopsis, author, volumes, and available chapters.
 - Reader with chapter navigation, font adjustments, spacing, and themes.
-- Stable URLs for works, chapters, and public profiles.
+- Readable URLs for works, chapters, and public profiles.
 - Personal library for following works and tracking reading progress.
 
 ### Community
@@ -260,7 +260,7 @@ Comments, reactions, and notifications may be fetched in the browser after the m
 - Open Graph metadata for sharing.
 - Canonical URLs, sitemap, and indexing rules.
 - Appropriate HTTP responses for missing or unavailable pages.
-- Stable slugs; title changes will not automatically change the URL.
+- Slugs that follow the name: a book uses its author-chosen acronym plus its title (`sra-shihais-remanescente-da-aura`), and renaming a book or chapter changes its URL.
 - Redirects when an address change is necessary.
 - Drafts and private areas excluded from indexing, in addition to server-side access protection.
 
@@ -341,9 +341,10 @@ Decisions will combine role, resource ownership, and content state.
 | Visitor | Reading and discovering public content |
 | Authenticated user | Library, interactions, and publishing their own works |
 | Moderator | Handling reports and authorized moderation actions |
-| Administrator | Account management, settings, and assigned responsibilities |
+| Administrator | Full access to the content of any author, plus genres and tags; can view users but not edit them |
+| Root | Everything an administrator can do, plus editing users, including their roles |
 
-Drafts will only be accessible to explicitly authorized people. Administrative responsibilities will not imply unrestricted access to private content.
+Drafts are accessible only to their authors and to administrator and root accounts, which have full access to all content.
 
 Checks will apply to endpoints, services, queries, downloads, and asynchronous tasks. Angular guards will support navigation; effective authorization will be enforced by the server.
 

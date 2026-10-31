@@ -28,7 +28,9 @@ public class GlobalExceptionHandler extends ResponseEntityExceptionHandler {
 
     @ExceptionHandler(ApiException.class)
     ProblemDetail handleApiException(ApiException ex) {
-        return ApiProblems.of(ex.getStatus(), ex.getCode(), ex.getMessage());
+        ProblemDetail problem = ApiProblems.of(ex.getStatus(), ex.getCode(), ex.getMessage());
+        ex.getProperties().forEach(problem::setProperty);
+        return problem;
     }
 
     @ExceptionHandler(RateLimitExceededException.class)

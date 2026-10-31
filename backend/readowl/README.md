@@ -2,7 +2,7 @@
 
 API REST da plataforma Readowl, em Java 25 e Spring Boot 4.1.2, com PostgreSQL 18.
 
-> **Estado atual: contas e autenticação.** Além da fundação (modelo de dados, migrations, erros e segurança base), já funcionam cadastro, confirmação de e-mail, login e logout, recuperação de senha, login com Google, perfil e limites de tentativas. Obras, leitura e comunidade entram nas próximas etapas. O contrato HTTP vigente está em [docs/backend-api-contract.md](../../docs/backend-api-contract.md).
+> **Estado atual: contas e publicação.** Além da fundação (modelo de dados, migrations, erros e segurança base), já funcionam contas, login, recuperação de senha, login com Google, perfil, obras, gêneros, tags, volumes, capítulos, rascunhos, publicação e administração. A leitura pública, o catálogo e a comunidade entram nas próximas etapas. O contrato HTTP vigente está em [docs/backend-api-contract.md](../../docs/backend-api-contract.md).
 
 ## Pré-requisitos
 
@@ -66,6 +66,18 @@ Baixe o binário do [Mailpit](https://github.com/axllent/mailpit/releases) para 
 
 Sem o Mailpit a aplicação funciona normalmente, mas os e-mails não chegam: a falha aparece no log e você não recebe o link de confirmação.
 
+### Primeira conta root
+
+Nenhuma conta administrativa é criada automaticamente. Crie uma conta normal por `POST /api/v1/auth/register` e promova-a no banco. O comando também confirma o e-mail, para não depender do Mailpit:
+
+```sql
+UPDATE users
+SET role = 'ROOT', email_verified_at = COALESCE(email_verified_at, now())
+WHERE email = 'seu-email@example.com';
+```
+
+Faça login em seguida; se já estiver logado, entre de novo, porque a sessão guarda o papel. A partir daí, o root define os demais papéis por `PATCH /api/v1/admin/users/{id}`.
+
 ### Login com Google
 
 É opcional em desenvolvimento. Para ativá-lo, crie uma credencial **OAuth 2.0 para aplicativo da Web** no Google Cloud Console e preencha `GOOGLE_CLIENT_ID` e `GOOGLE_CLIENT_SECRET` no `.env`. O URI de redirecionamento autorizado é `APP_PUBLIC_URL` seguido de `/login/oauth2/code/google`; em desenvolvimento, `http://localhost:4200/login/oauth2/code/google`.
@@ -118,6 +130,10 @@ Os testes de integração usam PostgreSQL real, de duas formas:
 | `PasswordRecoveryIntegrationTest` | Recuperação sem revelar contas, uso único do token, troca de senha |
 | `GoogleLoginIntegrationTest` | Fluxo OIDC completo contra um provedor local, vínculo explícito, nenhum token guardado |
 | `UserProfileIntegrationTest` | Perfil público e privado, proteção contra alteração de papel e identidade |
+| `BookIntegrationTest` | Sigla e slug, renomeação, permissões por papel, exclusão confirmada, paginação, limite de corpo |
+| `PublishingIntegrationTest` | Volumes, capítulos, reordenação, conflito de rascunho, publicação concorrente, identificadores trocados, acesso de terceiros |
+| `ChapterDocumentsTest` | Lista permitida do documento, geração de HTML, XSS, limites |
+| `AdminAccessIntegrationTest` | Hierarquia de papéis, revogação de sessões, proteção do último root, gêneros e tags |
 
 Os testes de API usam servidor HTTP real, cookies reais e sessões no PostgreSQL. Só o `MailSender` é substituído. O Google é simulado por um servidor local com ID tokens assinados, então **o fluxo com o Google real depende de credenciais e ainda precisa ser conferido manualmente**.
 
@@ -157,7 +173,15 @@ As dependências seguem uma direção, sem ciclos: `publishing` e `library` conh
 - **Limites de tentativas:** janela fixa no PostgreSQL (`RateLimiter`), compartilhada entre instâncias. E-mails e IPs são guardados como hash.
 - **E-mails:** enviados de forma assíncrona depois do commit. Se o SMTP falhar, a operação continua válida, a falha fica no log e o usuário pode pedir o reenvio. **Não há nova tentativa automática.**
 
+### Publicação
+
+- **Slugs:** a obra usa `sigla-titulo`; o capítulo usa o título, com um número se repetir na obra. Os dois mudam ao renomear, então um endereço antigo deixa de funcionar.
+- **Acesso:** `BookAccess` é o único ponto que decide quem altera uma obra. Alterações na estrutura bloqueiam a linha da obra antes de ler os dados.
+- **Documento:** `ChapterDocuments` valida o JSON do editor por lista permitida e gera o HTML escrevendo as tags, com todo texto escapado. Nenhum HTML do cliente é interpretado, por isso não há biblioteca de sanitização.
+- **Revisões:** são imutáveis e todas ficam guardadas. Registram quem publicou.
+
 ### Produção
 
+- **Corpo das requisições:** a aplicação recusa JSON acima de 3 MiB ao ler. Configure também `client_max_body_size` no NGINX.
 - **Proxy:** o perfil `prod` confia nos cabeçalhos `X-Forwarded-*`, então a aplicação não pode ser acessível diretamente. O NGINX precisa **sobrescrever** o IP do cliente com `proxy_set_header X-Forwarded-For $remote_addr;`. Com `$proxy_add_x_forwarded_for`, o cliente poderia forjar o IP e escapar dos limites por IP.
 - **Atualizações:** as sessões usam serialização Java. Ao atualizar o Spring Security para outra versão principal ou renomear `SessionUser` ou `GoogleLinkIntent`, sessões antigas podem falhar ao carregar. Nesse caso, limpe a tabela `spring_session`, o que desconecta todos os usuários.

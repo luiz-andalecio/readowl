@@ -26,6 +26,10 @@ public record SessionUser(UUID id, Role role) implements AuthenticatedPrincipal,
         return id.toString();
     }
 
+    public boolean isAdministrator() {
+        return role.isAdministrator();
+    }
+
     public List<GrantedAuthority> authorities() {
         return List.of(new SimpleGrantedAuthority("ROLE_" + role.name()));
     }

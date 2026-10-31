@@ -1,0 +1,92 @@
+package br.com.readowl.readowl.user.application;
+
+import br.com.readowl.readowl.shared.api.PageResponse;
+import br.com.readowl.readowl.shared.exception.ApiException;
+import br.com.readowl.readowl.user.domain.Role;
+import br.com.readowl.readowl.user.domain.User;
+import br.com.readowl.readowl.user.domain.UserStatus;
+import br.com.readowl.readowl.user.infrastructure.UserRepository;
+import org.springframework.context.ApplicationEventPublisher;
+import org.springframework.data.domain.Pageable;
+import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
+
+import java.util.UUID;
+
+/**
+ * Administração de contas. Senha e e-mail ficam de fora: a senha só muda pelo próprio usuário ou pela
+ * recuperação, e um e-mail novo precisaria ser confirmado pelo dono.
+ */
+@Service
+@Transactional
+public class AdminUserService {
+
+    private final UserRepository users;
+    private final UserService userService;
+    private final ApplicationEventPublisher events;
+
+    AdminUserService(UserRepository users, UserService userService, ApplicationEventPublisher events) {
+        this.users = users;
+        this.userService = userService;
+        this.events = events;
+    }
+
+    /**
+     * Campos nulos não são alterados.
+     */
+    public record UserChanges(String name, String username, String description, Role role, UserStatus status) {
+    }
+
+    @Transactional(readOnly = true)
+    public PageResponse<User> list(Pageable pageable) {
+        return PageResponse.from(users.findAll(pageable));
+    }
+
+    @Transactional(readOnly = true)
+    public User get(UUID id) {
+        return userService.requireById(id);
+    }
+
+    public User update(UUID id, UserChanges changes) {
+        User user = userService.requireById(id);
+        boolean loses = (changes.role() != null && changes.role() != Role.ROOT)
+                || changes.status() == UserStatus.SUSPENDED;
+        if (user.getRole() == Role.ROOT && user.isActive() && loses) {
+            requireAnotherActiveRoot(id);
+        }
+        boolean accessChanged = (changes.role() != null && changes.role() != user.getRole())
+                || (changes.status() != null && changes.status() != user.getStatus());
+
+        if (changes.username() != null && !User.normalizeUsername(changes.username()).equals(user.getUsername())) {
+            if (userService.isUsernameUnavailable(changes.username())) {
+                throw ApiException.conflict("USERNAME_TAKEN", "Este nome de usuário não está disponível.");
+            }
+            user.changeUsername(changes.username());
+        }
+        user.updateProfile(changes.name(), changes.description());
+        if (changes.role() != null) {
+            user.changeRole(changes.role());
+        }
+        if (changes.status() != null) {
+            user.changeStatus(changes.status());
+        }
+        User saved = users.saveAndFlush(user);
+        if (accessChanged) {
+            events.publishEvent(new UserAccessChanged(id));
+        }
+        return saved;
+    }
+
+    /**
+     * Sem root ativo, ninguém mais conseguiria administrar contas pela aplicação. O bloqueio impede que
+     * dois roots removam um ao outro ao mesmo tempo.
+     */
+    private void requireAnotherActiveRoot(UUID id) {
+        long others = users.findLockedByRoleAndStatus(Role.ROOT, UserStatus.ACTIVE).stream()
+                .filter(root -> !root.getId().equals(id))
+                .count();
+        if (others == 0) {
+            throw ApiException.conflict("LAST_ROOT", "Esta é a última conta root ativa.");
+        }
+    }
+}

@@ -39,4 +39,12 @@ public class Volume extends BaseEntity {
         this.title = title;
         this.displayOrder = displayOrder;
     }
+
+    public void rename(String title) {
+        this.title = title;
+    }
+
+    public void moveTo(int displayOrder) {
+        this.displayOrder = displayOrder;
+    }
 }

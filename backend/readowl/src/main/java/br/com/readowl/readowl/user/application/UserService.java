@@ -1,14 +1,13 @@
 package br.com.readowl.readowl.user.application;
 
 import br.com.readowl.readowl.shared.exception.ApiException;
+import br.com.readowl.readowl.shared.text.Slugs;
 import br.com.readowl.readowl.user.domain.User;
 import br.com.readowl.readowl.user.infrastructure.UserRepository;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
-import java.text.Normalizer;
 import java.time.Instant;
-import java.util.Locale;
 import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
@@ -21,7 +20,7 @@ public class UserService {
      * Poderiam se passar pela plataforma. "me", da rota /users/me, já é recusado pelo tamanho mínimo.
      */
     private static final Set<String> RESERVED_USERNAMES =
-            Set.of("admin", "administrador", "moderador", "readowl", "suporte");
+            Set.of("admin", "administrador", "moderador", "readowl", "root", "suporte");
     private static final int GENERATED_BASE_LENGTH = 20;
 
     private final UserRepository users;
@@ -95,11 +94,7 @@ public class UserService {
     }
 
     private static String slug(String name) {
-        String slug = Normalizer.normalize(name, Normalizer.Form.NFD)
-                .replaceAll("\\p{M}", "")
-                .toLowerCase(Locale.ROOT)
-                .replaceAll("[^a-z0-9]+", "-")
-                .replaceAll("^-+|-+$", "");
+        String slug = Slugs.slugify(name);
         if (slug.length() < 3) {
             return "leitor";
         }

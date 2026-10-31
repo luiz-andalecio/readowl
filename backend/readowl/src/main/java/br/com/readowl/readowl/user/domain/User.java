@@ -88,6 +88,18 @@ public class User extends BaseEntity {
         }
     }
 
+    public void changeUsername(String username) {
+        this.username = normalizeUsername(username);
+    }
+
+    public void changeRole(Role role) {
+        this.role = role;
+    }
+
+    public void changeStatus(UserStatus status) {
+        this.status = status;
+    }
+
     public void changePasswordHash(String passwordHash) {
         this.passwordHash = passwordHash;
     }

@@ -12,6 +12,24 @@ Referência de integração para o frontend Angular. **Este documento descreve a
 | Origem | Frontend e API sob a mesma origem. O backend **não habilita CORS** |
 | Rastreamento | Toda resposta traz o header `X-Correlation-Id`, gerado pelo servidor |
 | Idioma | Mensagens de validação sempre em português |
+| Tamanho | Corpos JSON acima de 3 MiB recebem 400 `BAD_REQUEST` |
+
+### Paginação
+
+Listas paginadas aceitam `?page=0&size=20&sort=-updatedAt`. `page` começa em 0 e `size` vai até 50. `sort` usa um campo permitido pelo endpoint, com `-` na frente para ordem decrescente. Valores fora disso recebem 400 com `INVALID_PAGINATION` ou `INVALID_SORT`.
+
+```json
+{ "content": [], "page": 0, "size": 20, "totalElements": 0, "totalPages": 0 }
+```
+
+### Papéis
+
+| `role` | Acesso |
+|---|---|
+| `USER` | Gerencia as próprias obras e o próprio perfil |
+| `MODERATOR` | Igual a `USER` por enquanto: as ações de moderação ainda não existem |
+| `ADMIN` | Tudo o que o `USER` faz, sobre as obras de **qualquer** autor, além de gêneros e tags. Vê usuários, mas não os edita |
+| `ROOT` | Tudo o que o `ADMIN` faz, e edita usuários |
 
 ## Erros
 
@@ -129,7 +147,7 @@ Informa quem está autenticado. Público: é a forma de saber se há sessão, se
 }
 ```
 
-`role` é `USER`, `MODERATOR` ou `ADMIN`.
+Os valores de `role` estão em [Papéis](#papéis). Use-os só para adaptar a interface: quem decide o acesso é o backend.
 
 ### `POST /auth/register`
 
@@ -345,6 +363,317 @@ Troca a senha. Exige sessão.
 | 400 | `INVALID_CURRENT_PASSWORD` | Senha atual incorreta |
 | 409 | `PASSWORD_NOT_SET` | Conta sem senha. Use a recuperação de senha para definir uma |
 
+## Gêneros e tags
+
+### `GET /genres`
+
+Lista todos os gêneros em ordem alfabética. Público.
+
+**200**
+```json
+[{ "id": "019f...", "name": "Fantasia" }]
+```
+
+### `GET /tags?query=mag`
+
+Sugere até 20 tags que começam com o texto informado. Público, para o campo de autocompletar.
+
+**200**, no mesmo formato de `GET /genres`.
+
+## Obras
+
+Exigem sessão e CSRF nas operações que alteram estado.
+
+**Quem pode alterar:** o autor, `ADMIN` e `ROOT`. Para os demais, uma obra fora do ar responde 404 `BOOK_NOT_FOUND`, sem revelar que existe, e uma obra publicada responde 403 `ACCESS_DENIED`.
+
+### O slug muda com o nome
+
+O slug é `sigla-titulo`, em minúsculas e sem acentos: a obra **Shihais: Remanescente da Aura** com a sigla **SRA** fica em `sra-shihais-remanescente-da-aura`. **Mudar o título ou a sigla muda o slug, e o endereço antigo deixa de valer.** Depois de renomear, use o `slug` da resposta.
+
+Vale o mesmo para capítulos: o slug segue o título. Títulos repetidos dentro da obra recebem um número, como `prologo-2`.
+
+### `POST /books`
+
+```json
+{
+  "title": "Shihais: Remanescente da Aura",
+  "acronym": "SRA",
+  "synopsis": "...",
+  "releaseFrequency": "Semanal",
+  "genreIds": ["019f..."],
+  "tags": ["Magia"]
+}
+```
+
+| Campo | Regra |
+|---|---|
+| `title` | Até 200 caracteres, não vazio |
+| `acronym` | De 2 a 10 letras ou números, sem acentos ou espaços. É salva em maiúsculas |
+| `synopsis` | Até 2000 caracteres, não vazia |
+| `releaseFrequency` | Opcional, até 50 caracteres |
+| `genreIds` | De 1 a 5 gêneros de `GET /genres` |
+| `tags` | Opcional, até 10 nomes com letras, números, espaços, `_` ou `-`. Tags novas são criadas; maiúsculas não geram duplicatas |
+
+**201**
+```json
+{
+  "id": "019f...",
+  "title": "Shihais: Remanescente da Aura",
+  "acronym": "SRA",
+  "slug": "sra-shihais-remanescente-da-aura",
+  "synopsis": "...",
+  "releaseFrequency": "Semanal",
+  "status": "ONGOING",
+  "publicationState": "DRAFT",
+  "authorUsername": "maria-leitora",
+  "genres": [{ "id": "019f...", "name": "Fantasia" }],
+  "tags": [{ "id": "019f...", "name": "Magia" }],
+  "createdAt": "2026-10-31T19:32:15.393101Z",
+  "updatedAt": "2026-10-31T19:32:15.393101Z"
+}
+```
+
+`status` é `ONGOING`, `COMPLETED` ou `HIATUS`. `publicationState` é `DRAFT`, `PUBLISHED` ou `UNPUBLISHED`.
+
+| Status | `code` | Quando |
+|---|---|---|
+| 400 | `UNKNOWN_GENRE` | Gênero inexistente |
+| 409 | `BOOK_SLUG_TAKEN` | Já existe obra com esta sigla e este título. O usuário deve escolher outra sigla |
+
+### `GET /books/{id}/details`
+
+Dados completos da obra para quem pode alterá-la. **200**, com o corpo acima.
+
+### `PATCH /books/{id}`
+
+Aceita os campos de `POST /books` e `status`. Campos ausentes não mudam. `releaseFrequency` em branco é removida. `genreIds` e `tags` substituem a lista inteira.
+
+**200**, com o corpo acima. Pode responder 409 `BOOK_SLUG_TAKEN`, sem alterar nada.
+
+### `DELETE /books/{id}?confirmTitle=<título exato>`
+
+**Exclui a obra com capítulos, comentários e avaliações, sem volta.** Peça ao usuário para digitar o título.
+
+**204**, sem corpo.
+
+| Status | `code` | Quando |
+|---|---|---|
+| 400 | `TITLE_CONFIRMATION_MISMATCH` | O título não confere |
+| 409 | `BOOK_PUBLISHED` | Despublique a obra antes |
+
+### `POST /books/{id}/publish` e `POST /books/{id}/unpublish`
+
+Envie um corpo vazio. **200**, com o corpo de `GET /books/{id}/details`.
+
+| Status | `code` | Quando |
+|---|---|---|
+| 409 | `BOOK_WITHOUT_PUBLISHED_CHAPTERS` | Publique ao menos um capítulo antes da obra |
+
+### `GET /users/me/books`
+
+Minhas obras, paginadas. `sort`: `title`, `createdAt` ou `updatedAt`. O padrão é `-updatedAt`.
+
+**200**, com `content` neste formato:
+```json
+{
+  "id": "019f...",
+  "title": "Shihais: Remanescente da Aura",
+  "acronym": "SRA",
+  "slug": "sra-shihais-remanescente-da-aura",
+  "status": "ONGOING",
+  "publicationState": "DRAFT",
+  "authorUsername": "maria-leitora",
+  "createdAt": "2026-10-31T19:32:15.393101Z",
+  "updatedAt": "2026-10-31T19:32:15.393101Z"
+}
+```
+
+## Volumes e capítulos
+
+Mesmas regras de acesso das obras. Volumes são opcionais: um capítulo pode ficar direto na obra.
+
+### `GET /books/{id}/contents`
+
+**200**
+```json
+{
+  "volumes": [{ "id": "019f...", "title": "Volume 1", "displayOrder": 1 }],
+  "chapters": [{
+    "id": "019f...",
+    "title": "Prólogo",
+    "slug": "prologo",
+    "state": "DRAFT",
+    "displayOrder": 1,
+    "volumeId": "019f...",
+    "createdAt": "2026-10-31T19:32:15.393101Z",
+    "updatedAt": "2026-10-31T19:32:15.393101Z"
+  }]
+}
+```
+
+`state` é `DRAFT`, `PUBLISHED` ou `UNPUBLISHED`. `volumeId` é `null` em capítulos sem volume. `displayOrder` é sequencial dentro de cada volume e pode ter lacunas depois de exclusões.
+
+### Volumes
+
+| Endpoint | Corpo | Resposta |
+|---|---|---|
+| `POST /books/{id}/volumes` | `{ "title": "Volume 1" }` | **201**, o volume |
+| `PATCH /volumes/{id}` | `{ "title": "Volume 1" }` | **200**, o volume |
+| `DELETE /volumes/{id}` | | **204**. Com capítulos, 409 `VOLUME_NOT_EMPTY` |
+| `PUT /books/{id}/volumes/order` | `{ "volumeIds": ["...", "..."] }` | **200**, os volumes na nova ordem |
+
+A reordenação recebe **todos** os volumes da obra. Lista incompleta, repetida ou com itens de outra obra recebe 400 `INVALID_ORDER`.
+
+### Capítulos
+
+| Endpoint | Corpo | Resposta |
+|---|---|---|
+| `POST /books/{id}/chapters` | `{ "title": "Prólogo", "volumeId": "..." }` | **201**, o capítulo |
+| `PATCH /chapters/{id}` | `{ "title": "Prólogo" }` | **200**, o capítulo, com o novo `slug` |
+| `DELETE /chapters/{id}` | | **204**. Publicado, 409 `CHAPTER_PUBLISHED` |
+| `PUT /books/{id}/chapters/order` | `{ "volumeId": "...", "chapterIds": ["..."] }` | **200**, os capítulos na nova ordem |
+
+`volumeId` é opcional na criação e na reordenação. Títulos têm até 200 caracteres. Um `volumeId` de outra obra recebe 400 `VOLUME_NOT_IN_BOOK`.
+
+A reordenação define a ordem de um volume, ou dos capítulos sem volume quando `volumeId` é omitido. A lista precisa incluir todos os capítulos que **já estão ali**; outros capítulos da obra na lista são **movidos** para lá. Fora disso, 400 `INVALID_ORDER`.
+
+## Rascunho e publicação
+
+O rascunho e o conteúdo publicado são separados: salvar nunca altera o que os leitores veem.
+
+### `GET /chapters/{id}/draft`
+
+**200**
+```json
+{
+  "chapterId": "019f...",
+  "version": 3,
+  "document": { "type": "doc", "content": [] },
+  "formatVersion": 1,
+  "updatedAt": "2026-10-31T19:32:15.393101Z"
+}
+```
+
+### `PUT /chapters/{id}/draft`
+
+Salvamento automático. Envie a `version` que você leu.
+
+```json
+{ "version": 3, "document": { "type": "doc", "content": [] } }
+```
+
+**200**, com o mesmo corpo do `GET` e a nova `version`. Use-a no próximo salvamento.
+
+| Status | `code` | Quando |
+|---|---|---|
+| 400 | `INVALID_DOCUMENT` | Fora do formato abaixo. `detail` indica o motivo |
+| 409 | `DRAFT_CONFLICT` | Outra aba salvou antes. A resposta traz `currentVersion`. Avise o usuário; não sobrescreva sem perguntar |
+| 409 | `CONCURRENT_MODIFICATION` | Dois salvamentos no mesmo instante. Trate como `DRAFT_CONFLICT`, mas sem `currentVersion`: leia o rascunho de novo |
+
+### Formato do documento (versão 1)
+
+É o JSON do Tiptap, com uma **lista fechada** do que é permitido. Qualquer outro tipo, marca, atributo ou campo recusa o documento inteiro. Configure o editor só com estas extensões:
+
+| Tipo | Elementos |
+|---|---|
+| Blocos | `paragraph`, `heading` (`level` 2 ou 3), `blockquote`, `bulletList`, `orderedList` (`start`), `listItem`, `horizontalRule` |
+| Em linha | `text`, `hardBreak` |
+| Marcas | `bold`, `italic`, `underline`, `strike` |
+| Alinhamento | `textAlign` em `paragraph` e `heading`: `left`, `center`, `right` ou `justify` |
+
+**Links e imagens não são aceitos nesta versão.** O limite é de 2 MiB de JSON, 500 mil caracteres de texto e 20 níveis de aninhamento.
+
+O HTML de leitura é gerado pelo servidor, com todo texto escapado. O alinhamento vira as classes `text-left`, `text-center`, `text-right` e `text-justify`, que o frontend precisa estilizar.
+
+### `POST /chapters/{id}/publish`
+
+Publica o rascunho na versão que o usuário viu.
+
+```json
+{ "draftVersion": 3 }
+```
+
+**200**, com o capítulo. Um rascunho igual à revisão atual não cria revisão nova.
+
+| Status | `code` | Quando |
+|---|---|---|
+| 400 | `EMPTY_CHAPTER` | Capítulo sem texto |
+| 409 | `DRAFT_CONFLICT` | O rascunho mudou depois de `draftVersion` |
+
+O capítulo só aparece para leitores quando **a obra também está publicada**.
+
+### `POST /chapters/{id}/unpublish`
+
+Envie um corpo vazio. **200**, com o capítulo. O rascunho e as revisões são mantidos.
+
+| Status | `code` | Quando |
+|---|---|---|
+| 409 | `LAST_PUBLISHED_CHAPTER` | É o último capítulo publicado de uma obra publicada. Despublique a obra antes |
+
+### `GET /chapters/{id}/revisions`
+
+Histórico de publicações, da mais recente para a mais antiga, paginado. Todas são mantidas; o salvamento automático não gera revisão.
+
+**200**, com `content` neste formato:
+```json
+{
+  "revisionNumber": 2,
+  "formatVersion": 1,
+  "createdByUsername": "maria-leitora",
+  "createdAt": "2026-10-31T19:32:15.393101Z",
+  "published": true
+}
+```
+
+`createdByUsername` é quem publicou, que pode ser um administrador.
+
+## Administração
+
+Em `/api/v1/admin`. Responde 403 `ACCESS_DENIED` a quem não tem o papel exigido.
+
+| Endpoint | Quem | O que faz |
+|---|---|---|
+| `GET /admin/books` | `ADMIN`, `ROOT` | Todas as obras, paginadas, no formato de `GET /users/me/books` |
+| `POST /admin/genres`, `POST /admin/tags` | `ADMIN`, `ROOT` | Cria. Corpo: `{ "name": "..." }`. **201** |
+| `PATCH /admin/genres/{id}`, `PATCH /admin/tags/{id}` | `ADMIN`, `ROOT` | Renomeia. Corpo: `{ "name": "..." }`. **200** |
+| `DELETE /admin/genres/{id}`, `DELETE /admin/tags/{id}` | `ADMIN`, `ROOT` | Exclui. **204** |
+| `GET /admin/users`, `GET /admin/users/{id}` | `ADMIN`, `ROOT` | Consulta usuários. `sort`: `username`, `email` ou `createdAt` |
+| `PATCH /admin/users/{id}` | `ROOT` | Edita um usuário |
+
+Gêneros e tags podem responder 409 com `GENRE_NAME_TAKEN`, `TAG_NAME_TAKEN`, `GENRE_IN_USE` ou `TAG_IN_USE`, e 404 com `GENRE_NOT_FOUND` ou `TAG_NOT_FOUND`.
+
+### `PATCH /admin/users/{id}`
+
+```json
+{ "name": "...", "username": "...", "description": "...", "role": "ADMIN", "status": "ACTIVE" }
+```
+
+Campos ausentes não mudam. `status` é `ACTIVE` ou `SUSPENDED`. Senha e e-mail não são editáveis por aqui.
+
+**200**
+```json
+{
+  "id": "019f...",
+  "username": "maria-leitora",
+  "name": "Maria Leitora",
+  "email": "maria@example.com",
+  "description": null,
+  "role": "USER",
+  "status": "ACTIVE",
+  "emailVerified": true,
+  "createdAt": "2026-10-31T19:32:15.393101Z",
+  "updatedAt": "2026-10-31T19:32:15.393101Z"
+}
+```
+
+**Mudar `role` ou `status` encerra todas as sessões do usuário na hora.** Se for a própria conta, o root precisa entrar de novo.
+
+| Status | `code` | Quando |
+|---|---|---|
+| 404 | `USER_NOT_FOUND` | Usuário inexistente |
+| 409 | `USERNAME_TAKEN` | Nome de usuário ocupado ou reservado |
+| 409 | `LAST_ROOT` | Removeria a última conta root ativa |
+
 ## Operacional
 
 ### `GET /actuator/health`
@@ -374,17 +703,18 @@ Nada disso foi alterado no projeto Angular.
 | Renderização | `app.routes.server.ts` usa `RenderMode.Prerender` em `**`, que não atende rotas dinâmicas previstas para SSR |
 | Rotas novas | `/login`, `/conta`, `/verificar-email`, `/redefinir-senha` e `/recuperar-senha` |
 | Imagens | Tratar obra e perfil sem capa ou avatar até a etapa de mídia |
+| Editor | Adotar o Tiptap com as extensões da [lista do formato](#formato-do-documento-versão-1). Ele ainda não está no `package.json` |
+| Leitura | Estilizar as classes `text-left`, `text-center`, `text-right` e `text-justify` |
 
 ### Pontos a alinhar
 
 - O README cita Angular 22 e Node 24 LTS; o `package.json` usa Angular 21.2 e o Node local é o 26.
-- O modelo de capítulos armazena o documento do editor em JSON, conforme o README, assumindo Tiptap. **Se o editor mudar, o formato de conteúdo muda:** avise antes da etapa de publicação.
+- **Se o editor não for o Tiptap, o formato de conteúdo muda.** Avise antes de haver capítulos reais, porque os documentos salvos dependem dele.
 
 ## Planejado (ainda não implementado)
 
 Estes grupos ainda não existem e seus caminhos podem mudar:
 
-- **Obras e publicação:** obras, gêneros, tags, volumes, capítulos, rascunhos, publicação.
 - **Leitura e biblioteca:** catálogo, busca, leitura pública, obras seguidas, progresso.
 - **Comunidade:** comentários, avaliações, reações, visualizações.
 - **Operação:** notificações, denúncias, moderação, administração.

@@ -151,7 +151,7 @@ class EntityMappingIntegrationTest {
     }
 
     private Book newBook(User author) {
-        return persist(new Book("Obra", "obra-" + uniqueText(), "Sinopse", author));
+        return persist(new Book("Obra", "TST", "obra-" + uniqueText(), "Sinopse", author));
     }
 
     private <T> T persist(T entity) {

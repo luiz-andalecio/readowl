@@ -63,6 +63,10 @@ public final class ApiClient {
         return send(withCsrf(request(path)).method("PATCH", json(body)).header("Content-Type", "application/json"));
     }
 
+    public Response delete(String path) {
+        return send(withCsrf(request(path)).DELETE());
+    }
+
     public Optional<String> cookie(String name) {
         return cookies.getCookieStore().getCookies().stream()
                 .filter(cookie -> cookie.getName().equals(name))

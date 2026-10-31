@@ -30,7 +30,7 @@ public class Chapter extends BaseEntity {
 
     @NotBlank
     @Size(max = 220)
-    @Column(nullable = false, updatable = false, length = 220)
+    @Column(nullable = false, length = 220)
     private String slug;
 
     @Enumerated(EnumType.STRING)
@@ -65,8 +65,32 @@ public class Chapter extends BaseEntity {
         this.displayOrder = displayOrder;
     }
 
+    /**
+     * O slug acompanha o título, que define o endereço do capítulo.
+     */
+    public void rename(String title, String slug) {
+        this.title = title;
+        this.slug = slug;
+    }
+
+    public void moveTo(Volume volume, int displayOrder) {
+        this.volume = volume;
+        this.displayOrder = displayOrder;
+    }
+
+    public boolean isPublished() {
+        return state == ChapterState.PUBLISHED;
+    }
+
     public void publish(ChapterRevision revision) {
         this.publishedRevision = revision;
         this.state = ChapterState.PUBLISHED;
+    }
+
+    /**
+     * Mantém a referência à revisão: republicar sem alterações não precisa criar outra.
+     */
+    public void unpublish() {
+        this.state = ChapterState.UNPUBLISHED;
     }
 }
