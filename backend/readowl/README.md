@@ -59,6 +59,7 @@ Preencha `DB_PASSWORD` e `READOWL_TEST_DB_PASSWORD`. O `.env` não é versionado
 | `SMTP_USER`, `SMTP_PASSWORD` | Credenciais do servidor de e-mail | Vazias |
 | `MAIL_FROM` | Remetente dos e-mails | `no-reply@readowl.local` (só no perfil `dev`) |
 | `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET` | Login com Google | Sem o ID, o login com Google fica desativado |
+| `TRUSTED_PROXIES` | Só no perfil `prod`: expressão regular com o endereço do proxy, como `172\.18\.0\.2` | Nenhum: a aplicação não sobe sem ela |
 
 ### E-mail em desenvolvimento
 
@@ -123,6 +124,11 @@ Os testes de integração usam PostgreSQL real, de duas formas:
 | `MigrationUpgradeIntegrationTest` | Atualização de um banco com dados a partir da versão 6, falha sem alterar nada |
 | `QueryCountIntegrationTest` | Listas sem uma consulta por item, comparando páginas de tamanhos diferentes |
 | `UnstorableTextIntegrationTest` | Caractere nulo em corpos e parâmetros responde 400, sem deixar nada gravado |
+| `TrustedProxyIntegrationTest`, `UntrustedProxyIntegrationTest` | Perfil `prod`: cabeçalhos forjados, auditoria, bloqueio de conta por terceiros |
+| `ContentQuotaIntegrationTest` | Cotas e limites de autoria |
+| `ModerationIndependenceIntegrationTest` | Conteúdo oculto não é excluído, e ninguém modera o próprio conteúdo |
+| `ChapterViewPurgeIntegrationTest`, `DeniedAuditIntegrationTest` | Limpeza de visualizações e limite das recusas na auditoria |
+| `ClientAddressTest`, `ConcurrencyLimitedPasswordEncoderTest` | Agrupamento de IPv6 e limite de hashes simultâneos |
 | `SchemaConstraintsIntegrationTest` | Unicidade, FKs compostas, `CHECK`, cascatas e reordenação |
 | `EntityMappingIntegrationTest` | Mapeamentos JPA, carga LAZY, JSONB, lock otimista, rascunho separado do publicado |
 | `SecurityBaselineIntegrationTest` | Negação por padrão, CSRF, Actuator, formato dos erros |
@@ -207,6 +213,7 @@ As dependências seguem uma direção, sem ciclos: `publishing` e `library` conh
 
 - **Visualizações:** um único comando SQL (`ChapterViewRepository.count`) decide e incrementa, o que mantém a contagem correta entre instâncias. Ele altera a obra antes do capítulo, na mesma ordem da publicação, para evitar deadlocks. Não altera `version`, então uma visita não causa conflito na edição do autor. Nenhum IP é guardado.
 - **Avaliações e reações:** gravadas por upsert e sempre somadas a partir das linhas, sem contadores que possam divergir. O cliente só envia a própria nota ou reação.
+- **Limpeza de visualizações:** `chapter_views` só serve para deduplicar. Uma tarefa de hora em hora apaga as linhas com mais de 5 minutos, o que não muda a contagem e evita acumular o histórico de leitura de cada pessoa.
 - **Comentários:** texto puro, exibido pelo frontend sem interpretar HTML. A exclusão é lógica, e o texto fica para a moderação. A checagem de repetição usa um bloqueio consultivo por usuário, liberado ao fim da transação.
 - **Respostas:** têm um nível, verificado no serviço. Um comentário principal removido fica na lista sem texto nem autor enquanto tiver respostas visíveis.
 - **Curtidas:** gravadas por upsert e somadas a partir das linhas, com uma consulta por página. As listas públicas não dizem quem curtiu; o estado pessoal fica em `/users/me/liked-comments`, para não entrar em cache público.
@@ -217,11 +224,15 @@ As dependências seguem uma direção, sem ciclos: `publishing` e `library` conh
 - **Falhas:** eventos e e-mails têm até 3 tentativas com espera crescente. A falha fica na própria linha (`last_error`, `failed_at`, `email_last_error`, `email_status = 'FAILED'`) e não é repetida depois disso. Reprocessar exige alterar o banco.
 - **Limpeza:** eventos processados são apagados depois de 30 dias. Os que falharam ficam, e as notificações também: a retenção delas ainda não foi definida.
 - **E-mails de capítulos:** só com `users.email_new_chapters`, desligado por padrão. A entrega é ao menos uma vez: se a aplicação cair entre o envio e o commit, o e-mail se repete.
-- **Moderação:** ocultar tira o conteúdo do ar e impede republicar (`moderated_at`). Suspender contas continua exclusivo do root.
-- **Auditoria:** `AuditTrail.record` grava na mesma transação da ação, para mudanças em usuários, moderação e denúncias. `AuditInterceptor` registra as demais alterações administrativas depois da resposta, então **uma queda nesse instante pode perder a entrada**. Corpos de requisição nunca são gravados. A retenção ainda não foi definida.
+- **Moderação:** ocultar tira o conteúdo do ar e impede republicar e excluir (`moderated_at`), para preservar a prova. Moderadores não restauram o próprio conteúdo nem encerram denúncias contra si; administradores podem, e a ação fica na auditoria. Suspender contas continua exclusivo do root.
+- **Auditoria:** `AuditTrail.record` grava na mesma transação da ação, para mudanças em usuários, moderação e denúncias. `AuditInterceptor` registra as demais alterações administrativas depois da resposta, então **uma queda nesse instante pode perder a entrada**. Corpos de requisição nunca são gravados. Recusas de segurança têm limite de 60 entradas por hora para cada conta, e as seguintes não são registradas. A retenção ainda não foi definida.
 
 ### Produção
 
 - **Corpo das requisições:** a aplicação recusa JSON acima de 3 MiB ao ler. Configure também `client_max_body_size` no NGINX.
-- **Proxy:** o perfil `prod` confia nos cabeçalhos `X-Forwarded-*`, então a aplicação não pode ser acessível diretamente. O NGINX precisa **sobrescrever** o IP do cliente com `proxy_set_header X-Forwarded-For $remote_addr;`. Com `$proxy_add_x_forwarded_for`, o cliente poderia forjar o IP e escapar dos limites por IP.
+- **Proxy:** o perfil `prod` só aceita `X-Forwarded-For` e `X-Forwarded-Proto` de conexões vindas de `TRUSTED_PROXIES`, e ignora os de qualquer outra origem. O cliente é o último endereço da lista que não é um proxy confiável, então tanto `$remote_addr` quanto `$proxy_add_x_forwarded_for` são seguros no NGINX. **Um valor errado em `TRUSTED_PROXIES` faz todos os clientes parecerem um só, o endereço do proxy, e dispara os limites por IP.**
+- **Limites por IP:** `ClientAddress` é o único ponto que decide quem é o cliente. Um bloco IPv6 `/64` conta como um único cliente.
+- **Login:** cada IP só gasta uma parte do limite da conta, e um login correto zera as tentativas. Um ataque distribuído, a partir de 10 IPs, ainda pode bloquear a conta por até 15 minutos, porque esse limite protege a senha.
+- **Hash de senha:** cada hash usa 19 MiB. `readowl.max-concurrent-password-hashes`, 16 por padrão, limita os simultâneos a cerca de 300 MiB. Quem espera mais de 5 segundos recebe 503.
+- **Cotas de conteúdo:** `readowl.limits.*` define obras por conta, volumes e capítulos por obra e revisões por capítulo. Os limites por tempo ficam em `RateLimitPolicy`, e `@RateLimited` os aplica às rotas. Eles reduzem o abuso de armazenamento, mas não há cota por volume de dados.
 - **Atualizações:** as sessões usam serialização Java. Ao atualizar o Spring Security para outra versão principal ou renomear `SessionUser` ou `GoogleLinkIntent`, sessões antigas podem falhar ao carregar. Nesse caso, limpe a tabela `spring_session`, o que desconecta todos os usuários.

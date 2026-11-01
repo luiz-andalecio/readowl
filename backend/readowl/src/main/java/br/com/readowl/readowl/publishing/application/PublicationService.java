@@ -12,6 +12,7 @@ import br.com.readowl.readowl.publishing.domain.ChapterState;
 import br.com.readowl.readowl.publishing.infrastructure.ChapterRepository;
 import br.com.readowl.readowl.publishing.infrastructure.ChapterRevisionRepository;
 import br.com.readowl.readowl.shared.api.PageResponse;
+import br.com.readowl.readowl.shared.config.ReadowlProperties;
 import br.com.readowl.readowl.shared.exception.ApiException;
 import br.com.readowl.readowl.user.application.SessionUser;
 import br.com.readowl.readowl.user.application.UserService;
@@ -41,10 +42,11 @@ public class PublicationService {
     private final UserService users;
     private final JsonMapper jsonMapper;
     private final ApplicationEventPublisher events;
+    private final ReadowlProperties.Limits limits;
 
     PublicationService(BookAccess bookAccess, ChapterAccess chapterAccess, ChapterDraftService drafts,
                        ChapterRepository chapters, ChapterRevisionRepository revisions, UserService users,
-                       JsonMapper jsonMapper, ApplicationEventPublisher events) {
+                       JsonMapper jsonMapper, ApplicationEventPublisher events, ReadowlProperties properties) {
         this.bookAccess = bookAccess;
         this.chapterAccess = chapterAccess;
         this.drafts = drafts;
@@ -53,6 +55,7 @@ public class PublicationService {
         this.users = users;
         this.jsonMapper = jsonMapper;
         this.events = events;
+        this.limits = properties.limits();
     }
 
     /**
@@ -78,8 +81,12 @@ public class PublicationService {
         if (unchanged) {
             chapter.publish(current);
         } else {
-            chapter.publish(revisions.saveAndFlush(new ChapterRevision(chapter,
-                    revisions.findMaxRevisionNumber(chapterId) + 1, rendered.json(), draft.getFormatVersion(),
+            int revisionNumber = revisions.findMaxRevisionNumber(chapterId) + 1;
+            if (revisionNumber > limits.revisionsPerChapter()) {
+                throw ApiException.conflict("REVISION_LIMIT_REACHED", "Este capítulo atingiu o limite de revisões publicadas.")
+                        .withProperty("limit", limits.revisionsPerChapter());
+            }
+            chapter.publish(revisions.saveAndFlush(new ChapterRevision(chapter, revisionNumber, rendered.json(), draft.getFormatVersion(),
                     rendered.plainText(), rendered.html(), users.requireById(principal.id()))));
         }
         // Repetir a publicação sem alterações não conta como novidade para o catálogo.
@@ -146,8 +153,9 @@ public class PublicationService {
         chapters.flush();
     }
 
-    public void restoreChapter(UUID chapterId) {
+    public void restoreChapter(UUID chapterId, SessionUser actor) {
         Chapter chapter = chapterAccess.requireLocked(chapterId);
+        actor.requireIndependentReview(chapter.getBook().getAuthor().getId());
         if (!chapter.isModerated()) {
             throw notHidden();
         }
@@ -164,8 +172,9 @@ public class PublicationService {
         chapters.flush();
     }
 
-    public void restoreBook(UUID bookId) {
+    public void restoreBook(UUID bookId, SessionUser actor) {
         Book book = bookAccess.requireLocked(bookId);
+        actor.requireIndependentReview(book.getAuthor().getId());
         if (!book.isModerated()) {
             throw notHidden();
         }
@@ -187,7 +196,7 @@ public class PublicationService {
         UUID publishedId = chapter.isPublished() && chapter.getPublishedRevision() != null
                 ? chapter.getPublishedRevision().getId()
                 : null;
-        return PageResponse.from(revisions.findByChapterId(chapterId, pageable)
+        return PageResponse.from(revisions.findRowsByChapterId(chapterId, pageable)
                 .map(revision -> RevisionView.from(revision, publishedId)));
     }
 }

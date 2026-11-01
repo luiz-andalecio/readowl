@@ -5,7 +5,10 @@ import br.com.readowl.readowl.book.domain.BookStatus;
 import br.com.readowl.readowl.book.infrastructure.BookRepository;
 import br.com.readowl.readowl.genre.application.TaxonomyService;
 import br.com.readowl.readowl.shared.api.PageResponse;
+import br.com.readowl.readowl.shared.config.ReadowlProperties;
 import br.com.readowl.readowl.shared.exception.ApiException;
+import br.com.readowl.readowl.shared.ratelimit.RateLimitPolicy;
+import br.com.readowl.readowl.shared.ratelimit.RateLimiter;
 import br.com.readowl.readowl.user.application.SessionUser;
 import br.com.readowl.readowl.user.application.UserService;
 import org.springframework.dao.DataIntegrityViolationException;
@@ -27,14 +30,18 @@ public class BookService {
     private final UserService users;
     private final TaxonomyService taxonomy;
     private final TransactionOperations transaction;
+    private final RateLimiter rateLimiter;
+    private final ReadowlProperties.Limits limits;
 
     BookService(BookRepository books, BookAccess access, UserService users, TaxonomyService taxonomy,
-                TransactionOperations transaction) {
+                TransactionOperations transaction, RateLimiter rateLimiter, ReadowlProperties properties) {
         this.books = books;
         this.access = access;
         this.users = users;
         this.taxonomy = taxonomy;
         this.transaction = transaction;
+        this.rateLimiter = rateLimiter;
+        this.limits = properties.limits();
     }
 
     public record NewBook(String title, String acronym, String synopsis, String releaseFrequency,
@@ -52,6 +59,10 @@ public class BookService {
         String title = data.title().trim();
         String slug = Book.slugFor(data.acronym(), title);
         return translatingSlugConflict(new AtomicReference<>(slug), () -> transaction.execute(status -> {
+            if (books.countByAuthorId(principal.id()) >= limits.booksPerAccount()) {
+                throw ApiException.conflict("BOOK_LIMIT_REACHED", "Esta conta atingiu o limite de obras.")
+                        .withProperty("limit", limits.booksPerAccount());
+            }
             requireFreeSlug(slug);
             Book book = new Book(title, data.acronym(), slug, data.synopsis().trim(),
                     users.requireById(principal.id()));
@@ -63,6 +74,10 @@ public class BookService {
     }
 
     public BookDetails update(UUID id, BookChanges changes, SessionUser principal) {
+        // Cada alteração pode criar até 10 tags públicas.
+        if (changes.tagNames() != null) {
+            rateLimiter.acquire(RateLimitPolicy.TAG_WRITE_ACCOUNT, principal.getName());
+        }
         AtomicReference<String> targetSlug = new AtomicReference<>();
         return translatingSlugConflict(targetSlug, () -> transaction.execute(status -> {
             Book book = access.requireManageable(id, principal);
@@ -95,11 +110,15 @@ public class BookService {
 
     /**
      * A exclusão em cascata remove capítulos, comentários e avaliações, sem volta. Por isso exige que a obra
-     * esteja fora do ar e que o título seja digitado.
+     * esteja fora do ar e que o título seja digitado. Conteúdo oculto pela moderação é prova até ser restaurado,
+     * e vale também para administradores.
      */
     @Transactional
     public void delete(UUID id, String confirmTitle, SessionUser principal) {
         Book book = access.requireManageable(id, principal);
+        if (book.isModerated() || books.hasModeratedChapter(id)) {
+            throw ApiException.conflict("BOOK_UNDER_MODERATION", "Esta obra tem conteúdo ocultado pela moderação.");
+        }
         if (book.isPublished()) {
             throw ApiException.conflict("BOOK_PUBLISHED", "Despublique a obra antes de excluí-la.");
         }

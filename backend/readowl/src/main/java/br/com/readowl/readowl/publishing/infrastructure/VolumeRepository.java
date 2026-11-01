@@ -12,6 +12,8 @@ public interface VolumeRepository extends JpaRepository<Volume, UUID> {
 
     List<Volume> findByBookIdOrderByDisplayOrder(UUID bookId);
 
+    long countByBookId(UUID bookId);
+
     Optional<Volume> findByIdAndBookId(UUID id, UUID bookId);
 
     @Query("select v.book.id from Volume v where v.id = :id")

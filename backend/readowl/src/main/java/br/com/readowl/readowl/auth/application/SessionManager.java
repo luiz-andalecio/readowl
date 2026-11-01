@@ -4,6 +4,7 @@ import br.com.readowl.readowl.user.application.SessionUser;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import jakarta.servlet.http.HttpSession;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.context.SecurityContext;
 import org.springframework.security.core.context.SecurityContextHolder;
@@ -14,6 +15,7 @@ import org.springframework.session.FindByIndexNameSessionRepository;
 import org.springframework.session.Session;
 import org.springframework.stereotype.Component;
 
+import java.time.Duration;
 import java.util.UUID;
 
 @Component
@@ -23,17 +25,21 @@ public class SessionManager {
     private final SecurityContextRepository contextRepository;
     private final CsrfTokenRepository csrfTokens;
     private final FindByIndexNameSessionRepository<? extends Session> sessions;
+    private final Duration sessionTimeout;
 
     SessionManager(SecurityContextRepository contextRepository, CsrfTokenRepository csrfTokens,
-                   FindByIndexNameSessionRepository<? extends Session> sessions) {
+                   FindByIndexNameSessionRepository<? extends Session> sessions,
+                   @Value("${spring.session.timeout}") Duration sessionTimeout) {
         this.contextRepository = contextRepository;
         this.csrfTokens = csrfTokens;
         this.sessions = sessions;
+        this.sessionTimeout = sessionTimeout;
     }
 
     /**
      * Autentica a sessão com um novo ID, contra fixação de sessão. O token CSRF é descartado: o cliente
-     * obtém um novo em GET /auth/csrf.
+     * obtém um novo em GET /auth/csrf. A sessão criada para o login com Google tinha validade curta e passa
+     * a ter a normal.
      */
     public void establish(SessionUser user, HttpServletRequest request, HttpServletResponse response) {
         if (request.getSession(false) != null) {
@@ -43,6 +49,7 @@ public class SessionManager {
         context.setAuthentication(UsernamePasswordAuthenticationToken.authenticated(user, null, user.authorities()));
         contextHolder.setContext(context);
         contextRepository.saveContext(context, request, response);
+        request.getSession().setMaxInactiveInterval((int) sessionTimeout.toSeconds());
         csrfTokens.saveToken(null, request, response);
     }
 

@@ -28,7 +28,8 @@ class AuditInterceptor implements HandlerInterceptor {
 
     @Override
     public void afterCompletion(HttpServletRequest request, HttpServletResponse response, Object handler, Exception ex) {
-        String path = request.getRequestURI();
+        // O caminho interno, e não a URI: um cabeçalho X-Forwarded-Prefix muda a URI, mas não a rota atendida.
+        String path = request.getServletPath();
         if (SAFE_METHODS.contains(request.getMethod())
                 || !(AuditTrail.isAdministrativePath(path) || AuditContext.isOverride())) {
             return;

@@ -1,0 +1,170 @@
+package br.com.readowl.readowl.shared.security;
+
+import br.com.readowl.readowl.support.AccountFixtures;
+import br.com.readowl.readowl.support.ApiClient;
+import br.com.readowl.readowl.support.ApiTestConfiguration;
+import br.com.readowl.readowl.support.RecordingMailSender;
+import br.com.readowl.readowl.support.TestDatabaseConfiguration;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.boot.test.web.server.LocalServerPort;
+import org.springframework.context.ApplicationContext;
+import org.springframework.context.annotation.Import;
+import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.test.context.ActiveProfiles;
+import org.springframework.web.multipart.MultipartResolver;
+
+import java.util.List;
+import java.util.UUID;
+
+import static br.com.readowl.readowl.support.AccountFixtures.PASSWORD;
+import static br.com.readowl.readowl.support.AccountFixtures.uniqueEmail;
+import static br.com.readowl.readowl.support.ApiClient.body;
+import static org.assertj.core.api.Assertions.assertThat;
+
+/**
+ * Perfil de produção com a aplicação atrás do proxy, papel que o cliente de teste faz ao conectar de localhost.
+ */
+@SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT,
+        properties = {"TRUSTED_PROXIES=127\\.0\\.0\\.1|0:0:0:0:0:0:0:1", "logging.structured.format.console="})
+@ActiveProfiles({"test", "prod"})
+@Import({TestDatabaseConfiguration.class, ApiTestConfiguration.class})
+class TrustedProxyIntegrationTest {
+
+    private static final String LOGIN = "/api/v1/auth/login";
+    private static final String FORGOT = "/api/v1/auth/password/forgot";
+    private static final String WRONG = "errada-123";
+
+    @LocalServerPort
+    private int port;
+
+    @Autowired
+    private RecordingMailSender mail;
+
+    @Autowired
+    private JdbcTemplate jdbc;
+
+    @Autowired
+    private ApplicationContext context;
+
+    private AccountFixtures accounts;
+
+    @BeforeEach
+    void setUp() {
+        accounts = new AccountFixtures(port, mail, jdbc);
+        accounts.resetRateLimits();
+        mail.setFailing(false);
+    }
+
+    private ApiClient from(String clientAddress) {
+        return accounts.client().withHeader("X-Forwarded-For", clientAddress);
+    }
+
+    private boolean countedFor(String policy, String subject) {
+        return jdbc.queryForObject("SELECT count(*) FROM rate_limit_buckets WHERE bucket_key = ?", Integer.class,
+                policy + ":" + Hashing.sha256Hex(subject)) > 0;
+    }
+
+    private String verifiedAccount() {
+        String email = uniqueEmail();
+        accounts.registerVerified(email);
+        accounts.resetRateLimits();
+        return email;
+    }
+
+    @Test
+    void theClientIsTheLastAddressThatIsNotTheProxy() {
+        from("1.2.3.4, 198.51.100.7").post(LOGIN, body("email", uniqueEmail(), "password", WRONG));
+
+        assertThat(countedFor("LOGIN_IP", "198.51.100.7")).isTrue();
+        assertThat(countedFor("LOGIN_IP", "1.2.3.4")).isFalse();
+    }
+
+    @Test
+    void theProtocolInformedByTheProxyIsUsed() {
+        ApiClient.Response csrf = accounts.client().withHeader("X-Forwarded-Proto", "https").get("/api/v1/auth/csrf");
+
+        assertThat(csrf.setCookie("XSRF-TOKEN").orElseThrow()).contains("Secure");
+    }
+
+    @Test
+    void aForgedPrefixDoesNotEscapeTheAudit() {
+        String email = verifiedAccount();
+        jdbc.update("UPDATE users SET role = 'ADMIN' WHERE email = ?", email);
+        UUID admin = accounts.userId(email);
+        ApiClient client = accounts.loggedIn(email, PASSWORD).withHeader("X-Forwarded-Prefix", "/x");
+
+        assertThat(client.post("/api/v1/admin/tags", body("name", "Tag " + UUID.randomUUID())).status()).isEqualTo(201);
+
+        assertThat(jdbc.queryForList("SELECT resource FROM audit_log WHERE actor_id = ?", String.class, admin))
+                .containsExactly("/api/v1/admin/tags");
+    }
+
+    @Test
+    void wrongPasswordsFromOneAddressDoNotKeepTheOwnerOut() {
+        String email = verifiedAccount();
+        for (int attempt = 0; attempt < 10; attempt++) {
+            assertThat(from("203.0.113.1").post(LOGIN, body("email", email, "password", WRONG)).status()).isEqualTo(401);
+        }
+        assertThat(from("203.0.113.1").post(LOGIN, body("email", email, "password", WRONG)).status()).isEqualTo(429);
+
+        assertThat(from("198.51.100.7").post(LOGIN, body("email", email, "password", PASSWORD)).status()).isEqualTo(200);
+    }
+
+    @Test
+    void wrongPasswordsFromManyAddressesAreLimitedForTheWholeAccount() {
+        String email = verifiedAccount();
+        for (int address = 1; address <= 10; address++) {
+            for (int attempt = 0; attempt < 10; attempt++) {
+                assertThat(from("203.0.113." + address).post(LOGIN, body("email", email, "password", WRONG)).status())
+                        .isEqualTo(401);
+            }
+        }
+
+        assertThat(from("203.0.113.11").post(LOGIN, body("email", email, "password", WRONG)).status()).isEqualTo(429);
+    }
+
+    @Test
+    void recoveryRequestsFromOneAddressDoNotBlockTheOwner() {
+        String email = verifiedAccount();
+        for (int attempt = 0; attempt < 3; attempt++) {
+            assertThat(from("203.0.113.1").post(FORGOT, body("email", email)).status()).isEqualTo(202);
+        }
+        assertThat(from("203.0.113.1").post(FORGOT, body("email", email)).status()).isEqualTo(429);
+
+        assertThat(from("198.51.100.7").post(FORGOT, body("email", email)).status()).isEqualTo(202);
+    }
+
+    @Test
+    void recoveryEmailsToOneAddressHaveAnOverallLimit() {
+        String email = verifiedAccount();
+        List<String> addresses = List.of("203.0.113.1", "203.0.113.2", "203.0.113.3", "203.0.113.4");
+        int accepted = 0;
+        for (String address : addresses) {
+            for (int attempt = 0; attempt < 3; attempt++) {
+                if (from(address).post(FORGOT, body("email", email)).status() == 202) {
+                    accepted++;
+                }
+            }
+        }
+
+        assertThat(accepted).isEqualTo(10);
+    }
+
+    @Test
+    void uploadsAreOffWhileNoRouteReceivesFiles() {
+        assertThat(context.getBeanNamesForType(MultipartResolver.class)).isEmpty();
+    }
+
+    @Test
+    void theSessionCookieUsesTheHostPrefix() {
+        String email = verifiedAccount();
+        ApiClient client = accounts.client();
+
+        ApiClient.Response login = client.post(LOGIN, body("email", email, "password", PASSWORD));
+
+        assertThat(login.setCookie("__Host-SESSION")).isPresent();
+    }
+}

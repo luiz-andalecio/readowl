@@ -146,6 +146,7 @@ public class ReportService {
             throw ApiException.badRequest("INVALID_REPORT_STATUS", "Encerre a denúncia com RESOLVED ou DISMISSED.");
         }
         Report report = require(id);
+        principal.requireIndependentReview(report.getTargetOwner().getId());
         if (!report.isOpen()) {
             throw ApiException.conflict("REPORT_CLOSED", "Esta denúncia já foi encerrada.");
         }

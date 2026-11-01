@@ -5,6 +5,8 @@ import br.com.readowl.readowl.book.application.BookService;
 import br.com.readowl.readowl.book.application.BookSummary;
 import br.com.readowl.readowl.shared.api.PageRequests;
 import br.com.readowl.readowl.shared.api.PageResponse;
+import br.com.readowl.readowl.shared.ratelimit.RateLimitPolicy;
+import br.com.readowl.readowl.shared.ratelimit.RateLimited;
 import br.com.readowl.readowl.user.application.SessionUser;
 import jakarta.validation.Valid;
 import org.springframework.http.HttpStatus;
@@ -37,6 +39,7 @@ class BookController {
 
     @PostMapping("/books")
     @ResponseStatus(HttpStatus.CREATED)
+    @RateLimited(RateLimitPolicy.BOOK_CREATION_ACCOUNT)
     BookDetails create(@AuthenticationPrincipal SessionUser principal, @Valid @RequestBody CreateBookRequest body) {
         return books.create(new BookService.NewBook(body.title(), body.acronym(), body.synopsis(),
                 body.releaseFrequency(), body.genreIds(), body.tags()), principal);
@@ -48,6 +51,7 @@ class BookController {
     }
 
     @PatchMapping("/books/{id}")
+    @RateLimited(RateLimitPolicy.AUTHORING_ACCOUNT)
     BookDetails update(@AuthenticationPrincipal SessionUser principal, @PathVariable UUID id,
                        @Valid @RequestBody UpdateBookRequest body) {
         return books.update(id, new BookService.BookChanges(body.title(), body.acronym(), body.synopsis(),
@@ -56,6 +60,7 @@ class BookController {
 
     @DeleteMapping("/books/{id}")
     @ResponseStatus(HttpStatus.NO_CONTENT)
+    @RateLimited(RateLimitPolicy.AUTHORING_ACCOUNT)
     void delete(@AuthenticationPrincipal SessionUser principal, @PathVariable UUID id,
                 @RequestParam(required = false) String confirmTitle) {
         books.delete(id, confirmTitle, principal);

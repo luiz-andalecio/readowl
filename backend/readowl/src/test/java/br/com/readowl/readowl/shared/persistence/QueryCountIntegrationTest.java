@@ -1,6 +1,7 @@
 package br.com.readowl.readowl.shared.persistence;
 
 import br.com.readowl.readowl.notification.application.NotificationWorker;
+import br.com.readowl.readowl.publishing.domain.ChapterRevision;
 import br.com.readowl.readowl.support.AccountFixtures;
 import br.com.readowl.readowl.support.ApiClient;
 import br.com.readowl.readowl.support.ApiIntegrationTest;
@@ -121,6 +122,25 @@ class QueryCountIntegrationTest {
         assertNoQueryPerItem(withRole("ADMIN"), "/api/v1/admin/books");
         assertNoQueryPerItem(reader, "/api/v1/library");
         assertThat(chapter).isNotBlank();
+    }
+
+    /**
+     * Cada revisão guarda o texto três vezes: nem a leitura nem o histórico podem carregar a entidade inteira.
+     */
+    @Test
+    void readingAndHistoryDoNotLoadWholeRevisions() {
+        ApiClient author = newUser();
+        String book = books.publishedBook(author);
+        String chapter = author.get("/api/v1/books/" + book + "/contents").json().at("/chapters/0/id").asString();
+        String slug = author.get("/api/v1/books/" + book + "/details").json().at("/slug").asString();
+        statistics.clear();
+
+        assertThat(accounts.client().get("/api/v1/books/" + slug + "/chapters/capitulo-1").json().at("/html").asString())
+                .contains("Era uma vez.");
+        assertThat(author.get("/api/v1/chapters/" + chapter + "/revisions").json().at("/content/0/published").asBoolean())
+                .isTrue();
+
+        assertThat(statistics.getEntityStatistics(ChapterRevision.class.getName()).getLoadCount()).isZero();
     }
 
     @Test

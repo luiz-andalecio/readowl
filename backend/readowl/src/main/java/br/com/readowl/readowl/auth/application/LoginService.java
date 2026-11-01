@@ -34,16 +34,24 @@ public class LoginService {
     /**
      * Conta inexistente e senha errada dão a mesma resposta e custam o mesmo tempo. Os motivos de
      * recusa específicos só aparecem para quem provou conhecer a senha.
+     * <p>
+     * O login certo zera as tentativas, e cada IP só gasta uma parte do limite da conta: errar a senha de
+     * outra pessoa não a impede de entrar.
      */
     public SessionUser authenticate(String email, String password, String clientIp) {
+        String account = User.normalizeEmail(email);
+        String accountAtIp = account + "|" + clientIp;
         rateLimiter.acquire(RateLimitPolicy.LOGIN_IP, clientIp);
-        rateLimiter.acquire(RateLimitPolicy.LOGIN_ACCOUNT, User.normalizeEmail(email));
+        rateLimiter.acquire(RateLimitPolicy.LOGIN_ACCOUNT_IP, accountAtIp);
+        rateLimiter.acquire(RateLimitPolicy.LOGIN_ACCOUNT, account);
 
         Optional<User> found = users.findByEmail(email).filter(User::hasPassword);
         boolean matches = passwordEncoder.matches(password, found.map(User::getPasswordHash).orElse(decoyHash));
         if (found.isEmpty() || !matches) {
             throw ApiException.unauthorized("INVALID_CREDENTIALS", "E-mail ou senha incorretos.");
         }
+        rateLimiter.reset(RateLimitPolicy.LOGIN_ACCOUNT_IP, accountAtIp);
+        rateLimiter.reset(RateLimitPolicy.LOGIN_ACCOUNT, account);
 
         User user = found.get();
         if (!user.isActive()) {

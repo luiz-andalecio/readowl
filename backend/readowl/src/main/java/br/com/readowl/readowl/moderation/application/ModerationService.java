@@ -47,7 +47,7 @@ public class ModerationService {
     }
 
     public void restoreBook(UUID id, String reason, SessionUser actor) {
-        publication.restoreBook(id);
+        publication.restoreBook(id, actor);
         audit.record(actor.id(), "BOOK_RESTORED", "books/" + id, Map.of("reason", reason.trim()));
     }
 
@@ -57,7 +57,7 @@ public class ModerationService {
     }
 
     public void restoreChapter(UUID id, String reason, SessionUser actor) {
-        publication.restoreChapter(id);
+        publication.restoreChapter(id, actor);
         audit.record(actor.id(), "CHAPTER_RESTORED", "chapters/" + id, Map.of("reason", reason.trim()));
     }
 
@@ -67,7 +67,7 @@ public class ModerationService {
     }
 
     public void restoreComment(UUID id, String reason, SessionUser actor) {
-        comments.restore(id);
+        comments.restore(id, actor);
         audit.record(actor.id(), "COMMENT_RESTORED", "comments/" + id, Map.of("reason", reason.trim()));
     }
 }

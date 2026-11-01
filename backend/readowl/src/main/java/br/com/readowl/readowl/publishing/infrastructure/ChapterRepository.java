@@ -33,8 +33,23 @@ public interface ChapterRepository extends JpaRepository<Chapter, UUID> {
             """)
     List<PublishedChapterRow> findPublishedRows(UUID bookId);
 
-    @EntityGraph(attributePaths = {"publishedRevision", "volume"})
-    Optional<Chapter> findWithRevisionByBookIdAndSlug(UUID bookId, String slug);
+    /**
+     * Capítulo para leitura: só o HTML da revisão, que também guarda o documento e o texto puro.
+     */
+    record ChapterContentRow(UUID id, String title, String slug, UUID volumeId, String volumeTitle, String html,
+                             Instant publishedAt) {
+    }
+
+    @Query("""
+            select new br.com.readowl.readowl.publishing.infrastructure.ChapterRepository$ChapterContentRow(
+                c.id, c.title, c.slug, v.id, v.title, r.html, r.createdAt)
+            from Chapter c left join c.volume v join c.publishedRevision r
+            where c.book.id = :bookId and c.slug = :slug
+              and c.state = br.com.readowl.readowl.publishing.domain.ChapterState.PUBLISHED
+            """)
+    Optional<ChapterContentRow> findPublishedContent(UUID bookId, String slug);
+
+    long countByBookId(UUID bookId);
 
     Optional<Chapter> findByIdAndBookId(UUID id, UUID bookId);
 

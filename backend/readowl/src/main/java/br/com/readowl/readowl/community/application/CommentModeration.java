@@ -4,6 +4,7 @@ import br.com.readowl.readowl.community.domain.Comment;
 import br.com.readowl.readowl.community.infrastructure.CommentRepository;
 import br.com.readowl.readowl.shared.api.PageResponse;
 import br.com.readowl.readowl.shared.exception.ApiException;
+import br.com.readowl.readowl.user.application.SessionUser;
 import br.com.readowl.readowl.user.domain.User;
 import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
@@ -73,8 +74,9 @@ public class CommentModeration {
     /**
      * Só desfaz a moderação: não traz de volta o que a própria pessoa excluiu.
      */
-    public void restore(UUID commentId) {
+    public void restore(UUID commentId, SessionUser actor) {
         Comment comment = comments.findById(commentId).orElseThrow(CommentService::notFound);
+        actor.requireIndependentReview(comment.getUser().getId());
         if (!comment.isModerated()) {
             throw ApiException.conflict("NOT_HIDDEN", "Este conteúdo não está oculto pela moderação.");
         }

@@ -4,9 +4,8 @@ import br.com.readowl.readowl.book.application.PublicBooks;
 import br.com.readowl.readowl.book.domain.Book;
 import br.com.readowl.readowl.book.domain.BookStatus;
 import br.com.readowl.readowl.genre.application.TaxonomyItem;
-import br.com.readowl.readowl.publishing.domain.Chapter;
-import br.com.readowl.readowl.publishing.domain.ChapterRevision;
 import br.com.readowl.readowl.publishing.infrastructure.ChapterRepository;
+import br.com.readowl.readowl.publishing.infrastructure.ChapterRepository.ChapterContentRow;
 import br.com.readowl.readowl.publishing.infrastructure.ChapterRepository.PublishedChapterRow;
 import br.com.readowl.readowl.shared.exception.ApiException;
 import org.springframework.stereotype.Service;
@@ -83,16 +82,14 @@ public class ReadingService {
 
     public ChapterReading chapter(String bookSlug, String chapterSlug) {
         Book book = publicBooks.requireBySlug(bookSlug);
-        Chapter chapter = chapters.findWithRevisionByBookIdAndSlug(book.getId(), chapterSlug)
-                .filter(Chapter::isPublished)
+        ChapterContentRow chapter = chapters.findPublishedContent(book.getId(), chapterSlug)
                 .orElseThrow(() -> ApiException.notFound("CHAPTER_NOT_FOUND", "Capítulo não encontrado."));
-        ChapterRevision revision = chapter.getPublishedRevision();
 
         List<PublishedChapterRow> rows = chapters.findPublishedRows(book.getId());
-        int position = indexOf(rows, chapter.getId());
-        return new ChapterReading(chapter.getId(), chapter.getTitle(), chapter.getSlug(),
-                chapter.getVolume() == null ? null : new PublicVolume(chapter.getVolume().getId(), chapter.getVolume().getTitle()),
-                revision.getHtml(), revision.getCreatedAt(),
+        int position = indexOf(rows, chapter.id());
+        return new ChapterReading(chapter.id(), chapter.title(), chapter.slug(),
+                chapter.volumeId() == null ? null : new PublicVolume(chapter.volumeId(), chapter.volumeTitle()),
+                chapter.html(), chapter.publishedAt(),
                 new BookLink(book.getId(), book.getTitle(), book.getSlug(), author(book)),
                 position > 0 ? link(rows.get(position - 1)) : null,
                 position < rows.size() - 1 ? link(rows.get(position + 1)) : null);

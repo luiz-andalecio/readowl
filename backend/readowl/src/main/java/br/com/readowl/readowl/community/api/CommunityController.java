@@ -10,6 +10,7 @@ import br.com.readowl.readowl.community.domain.Comment;
 import br.com.readowl.readowl.community.domain.ReactionType;
 import br.com.readowl.readowl.shared.api.PageRequests;
 import br.com.readowl.readowl.shared.api.PageResponse;
+import br.com.readowl.readowl.shared.ratelimit.ClientAddress;
 import br.com.readowl.readowl.user.application.SessionUser;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
@@ -77,7 +78,7 @@ class CommunityController {
     @ResponseStatus(HttpStatus.CREATED)
     CommentResponse commentOnBook(@AuthenticationPrincipal SessionUser principal, @PathVariable UUID bookId,
                                   @Valid @RequestBody CommentRequest body, HttpServletRequest request) {
-        return comments.commentOnBook(bookId, body.content(), principal, request.getRemoteAddr());
+        return comments.commentOnBook(bookId, body.content(), principal, ClientAddress.of(request));
     }
 
     @GetMapping("/chapters/{chapterId}/comments")
@@ -92,7 +93,7 @@ class CommunityController {
     @ResponseStatus(HttpStatus.CREATED)
     CommentResponse commentOnChapter(@AuthenticationPrincipal SessionUser principal, @PathVariable UUID chapterId,
                                      @Valid @RequestBody CommentRequest body, HttpServletRequest request) {
-        return comments.commentOnChapter(chapterId, body.content(), principal, request.getRemoteAddr());
+        return comments.commentOnChapter(chapterId, body.content(), principal, ClientAddress.of(request));
     }
 
     @GetMapping("/comments/{commentId}/replies")
@@ -107,13 +108,13 @@ class CommunityController {
     @ResponseStatus(HttpStatus.CREATED)
     CommentResponse reply(@AuthenticationPrincipal SessionUser principal, @PathVariable UUID commentId,
                           @Valid @RequestBody CommentRequest body, HttpServletRequest request) {
-        return comments.reply(commentId, body.content(), principal, request.getRemoteAddr());
+        return comments.reply(commentId, body.content(), principal, ClientAddress.of(request));
     }
 
     @PutMapping("/comments/{commentId}/like")
     CommentLikeService.LikeState like(@AuthenticationPrincipal SessionUser principal, @PathVariable UUID commentId,
                                       HttpServletRequest request) {
-        return commentLikes.like(commentId, principal, request.getRemoteAddr());
+        return commentLikes.like(commentId, principal, ClientAddress.of(request));
     }
 
     @DeleteMapping("/comments/{commentId}/like")
@@ -131,7 +132,7 @@ class CommunityController {
     @PatchMapping("/comments/{commentId}")
     CommentResponse editComment(@AuthenticationPrincipal SessionUser principal, @PathVariable UUID commentId,
                                 @Valid @RequestBody CommentRequest body, HttpServletRequest request) {
-        return comments.edit(commentId, body.content(), principal, request.getRemoteAddr());
+        return comments.edit(commentId, body.content(), principal, ClientAddress.of(request));
     }
 
     @DeleteMapping("/comments/{commentId}")
@@ -153,7 +154,7 @@ class CommunityController {
     @PutMapping("/books/{bookId}/rating/me")
     RatingService.MyRating rate(@AuthenticationPrincipal SessionUser principal, @PathVariable UUID bookId,
                                 @Valid @RequestBody RatingRequest body, HttpServletRequest request) {
-        return ratings.rate(bookId, body.score(), principal, request.getRemoteAddr());
+        return ratings.rate(bookId, body.score(), principal, ClientAddress.of(request));
     }
 
     @DeleteMapping("/books/{bookId}/rating/me")
@@ -175,7 +176,7 @@ class CommunityController {
     @PutMapping("/chapters/{chapterId}/reactions/me")
     ReactionService.MyReaction react(@AuthenticationPrincipal SessionUser principal, @PathVariable UUID chapterId,
                                      @Valid @RequestBody ReactionRequest body, HttpServletRequest request) {
-        return reactions.react(chapterId, body.type(), principal, request.getRemoteAddr());
+        return reactions.react(chapterId, body.type(), principal, ClientAddress.of(request));
     }
 
     @DeleteMapping("/chapters/{chapterId}/reactions/me")
@@ -188,7 +189,7 @@ class CommunityController {
     @ResponseStatus(HttpStatus.NO_CONTENT)
     void recordView(@AuthenticationPrincipal SessionUser principal, @PathVariable UUID chapterId,
                     HttpServletRequest request) {
-        views.record(chapterId, principal, request.getRemoteAddr());
+        views.record(chapterId, principal, ClientAddress.of(request));
     }
 
     private static Pageable commentPage(int page, int size, String sort) {

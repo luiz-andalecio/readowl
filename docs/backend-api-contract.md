@@ -75,6 +75,7 @@ Erros de validação trazem também `errors`:
 | 409 | `DATA_CONFLICT` | Conflito com dados existentes |
 | 429 | `RATE_LIMITED` | Muitas tentativas. O header `Retry-After` informa os segundos de espera |
 | 500 | `INTERNAL_ERROR` | Erro inesperado |
+| 503 | `AUTHENTICATION_BUSY` | Muitas verificações de senha ao mesmo tempo. Vale para login, cadastro e troca de senha. Tente de novo em instantes |
 
 Outros erros de protocolo usam o nome do status HTTP como `code`, por exemplo `UNSUPPORTED_MEDIA_TYPE`. Os códigos de cada operação estão junto dos endpoints.
 
@@ -112,9 +113,9 @@ Os limites contam por IP e por conta e respondem 429 com `RATE_LIMITED`:
 
 | Operação | Limite |
 |---|---|
-| Login | 10 por conta e 30 por IP, a cada 15 minutos |
+| Login | 10 por conta em cada IP, 100 por conta e 30 por IP, a cada 15 minutos. Um login correto zera os dois limites por conta |
 | Cadastro | 5 por e-mail e 10 por IP, por hora |
-| Reenvio de confirmação e recuperação de senha | 3 por e-mail e 10 por IP, por hora |
+| Reenvio de confirmação e recuperação de senha | 3 por e-mail em cada IP, 10 por e-mail e 10 por IP, por hora |
 | Uso de token de e-mail | 20 por IP, a cada 15 minutos |
 | Confirmação de senha (troca e vínculo com Google) | 10 por conta, a cada 15 minutos |
 
@@ -389,6 +390,25 @@ Exigem sessão e CSRF nas operações que alteram estado.
 
 **Quem pode alterar:** o autor, `ADMIN` e `ROOT`. Para os demais, uma obra fora do ar responde 404 `BOOK_NOT_FOUND`, sem revelar que existe, e uma obra publicada responde 403 `ACCESS_DENIED`.
 
+### Limites de autoria
+
+Protegem o armazenamento contra abuso e valem por conta. Passar de um limite por tempo responde 429 `RATE_LIMITED`. Passar de uma cota responde 409 com o código indicado e o campo `limit`.
+
+| Operação | Limite |
+|---|---|
+| `POST /books` | 10 por dia |
+| `PATCH /books/{id}` com `tags` | 30 por hora, porque pode criar tags públicas |
+| Alterar ou excluir obras, volumes e capítulos, reordenar e publicar ou despublicar obras | 120 por minuto |
+| `PUT /chapters/{id}/draft` | 120 por minuto |
+| `POST /chapters/{id}/publish` | 120 por hora |
+
+| Cota | Valor padrão | `code` |
+|---|---|---|
+| Obras por conta | 50 | `BOOK_LIMIT_REACHED` |
+| Volumes por obra | 200 | `VOLUME_LIMIT_REACHED` |
+| Capítulos por obra | 5.000 | `CHAPTER_LIMIT_REACHED` |
+| Revisões publicadas por capítulo | 500 | `REVISION_LIMIT_REACHED` |
+
 ### O slug muda com o nome
 
 O slug é `sigla-titulo`, em minúsculas e sem acentos: a obra **Shihais: Remanescente da Aura** com a sigla **SRA** fica em `sra-shihais-remanescente-da-aura`. **Mudar o título ou a sigla muda o slug, e o endereço antigo deixa de valer.** Depois de renomear, use o `slug` da resposta.
@@ -465,6 +485,7 @@ Aceita os campos de `POST /books` e `status`. Campos ausentes não mudam. `relea
 |---|---|---|
 | 400 | `TITLE_CONFIRMATION_MISMATCH` | O título não confere |
 | 409 | `BOOK_PUBLISHED` | Despublique a obra antes |
+| 409 | `BOOK_UNDER_MODERATION` | A obra ou um de seus capítulos está oculto pela moderação. Vale também para administradores |
 
 ### `POST /books/{id}/publish` e `POST /books/{id}/unpublish`
 
@@ -1018,6 +1039,7 @@ Encerra a denúncia. `note` é opcional, até 1000 caracteres. **200**, com o co
 | 400 | `INVALID_REPORT_STATUS` | `status` não é `RESOLVED` nem `DISMISSED` |
 | 404 | `REPORT_NOT_FOUND` | Denúncia inexistente |
 | 409 | `REPORT_CLOSED` | Já encerrada |
+| 403 | `OWN_CONTENT_MODERATION` | A denúncia é contra quem está encerrando. `ADMIN` e `ROOT` podem |
 
 ### Ocultar e restaurar
 
@@ -1038,6 +1060,7 @@ Todas exigem o motivo, de até 500 caracteres, que fica na auditoria. **204**, s
 
 | Status | `code` | Quando |
 |---|---|---|
+| 403 | `OWN_CONTENT_MODERATION` | Ao restaurar, o conteúdo é de quem está pedindo. `ADMIN` e `ROOT` podem |
 | 404 | `BOOK_NOT_FOUND`, `CHAPTER_NOT_FOUND` ou `COMMENT_NOT_FOUND` | Inexistente |
 | 409 | `ALREADY_HIDDEN` | Já está oculto ou foi excluído pela própria pessoa |
 | 409 | `NOT_HIDDEN` | Não está oculto pela moderação |
@@ -1101,6 +1124,8 @@ Mesmas regras de acesso das obras. Volumes são opcionais: um capítulo pode fic
 | `DELETE /volumes/{id}` | | **204**. Com capítulos, 409 `VOLUME_NOT_EMPTY` |
 | `PUT /books/{id}/volumes/order` | `{ "volumeIds": ["...", "..."] }` | **200**, os volumes na nova ordem |
 
+Criar um volume além da cota responde 409 `VOLUME_LIMIT_REACHED`.
+
 A reordenação recebe **todos** os volumes da obra. Lista incompleta, repetida ou com itens de outra obra recebe 400 `INVALID_ORDER`.
 
 ### Capítulos
@@ -1109,10 +1134,10 @@ A reordenação recebe **todos** os volumes da obra. Lista incompleta, repetida 
 |---|---|---|
 | `POST /books/{id}/chapters` | `{ "title": "Prólogo", "volumeId": "..." }` | **201**, o capítulo |
 | `PATCH /chapters/{id}` | `{ "title": "Prólogo" }` | **200**, o capítulo, com o novo `slug` |
-| `DELETE /chapters/{id}` | | **204**. Publicado, 409 `CHAPTER_PUBLISHED` |
+| `DELETE /chapters/{id}` | | **204**. Publicado, 409 `CHAPTER_PUBLISHED`. Oculto pela moderação, 409 `CHAPTER_UNDER_MODERATION`, inclusive para administradores |
 | `PUT /books/{id}/chapters/order` | `{ "volumeId": "...", "chapterIds": ["..."] }` | **200**, os capítulos na nova ordem |
 
-`volumeId` é opcional na criação e na reordenação. Títulos têm até 200 caracteres. Um `volumeId` de outra obra recebe 400 `VOLUME_NOT_IN_BOOK`.
+`volumeId` é opcional na criação e na reordenação. Títulos têm até 200 caracteres. Um `volumeId` de outra obra recebe 400 `VOLUME_NOT_IN_BOOK`. Criar um capítulo além da cota responde 409 `CHAPTER_LIMIT_REACHED`.
 
 A reordenação define a ordem de um volume, ou dos capítulos sem volume quando `volumeId` é omitido. A lista precisa incluir todos os capítulos que **já estão ali**; outros capítulos da obra na lista são **movidos** para lá. Fora disso, 400 `INVALID_ORDER`.
 
@@ -1179,6 +1204,7 @@ Publica o rascunho na versão que o usuário viu.
 | 400 | `EMPTY_CHAPTER` | Capítulo sem texto |
 | 409 | `DRAFT_CONFLICT` | O rascunho mudou depois de `draftVersion` |
 | 409 | `CHAPTER_UNDER_MODERATION` | O capítulo foi ocultado pela moderação. Vale também para administradores |
+| 409 | `REVISION_LIMIT_REACHED` | O capítulo atingiu a cota de revisões publicadas |
 
 O capítulo só aparece para leitores quando **a obra também está publicada**.
 

@@ -6,6 +6,7 @@ import br.com.readowl.readowl.publishing.domain.Chapter;
 import br.com.readowl.readowl.shared.ratelimit.RateLimitPolicy;
 import br.com.readowl.readowl.shared.ratelimit.RateLimiter;
 import br.com.readowl.readowl.user.application.SessionUser;
+import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.support.TransactionOperations;
 
@@ -17,6 +18,8 @@ import java.util.UUID;
  */
 @Service
 public class ChapterViewService {
+
+    private static final int PURGE_BATCH_SIZE = 10_000;
 
     private final ChapterViewRepository views;
     private final PublicChapters publicChapters;
@@ -41,5 +44,17 @@ public class ChapterViewService {
                 views.count(principal.id(), chapterId, bookId);
             }
         });
+    }
+
+    /**
+     * A tabela só serve para não contar a mesma visita duas vezes. Guardar mais que isso seria acumular um
+     * histórico de leitura de cada pessoa, que nenhuma funcionalidade usa.
+     */
+    @Scheduled(fixedDelayString = "PT1H", initialDelayString = "PT1H")
+    public void purgeExpired() {
+        Integer removed;
+        do {
+            removed = transaction.execute(status -> views.deleteExpired(PURGE_BATCH_SIZE));
+        } while (removed != null && removed == PURGE_BATCH_SIZE);
     }
 }

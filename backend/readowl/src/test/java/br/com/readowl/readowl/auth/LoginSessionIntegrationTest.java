@@ -220,6 +220,19 @@ class LoginSessionIntegrationTest {
     }
 
     @Test
+    void aSuccessfulLoginClearsTheFailedAttempts() {
+        String email = uniqueEmail();
+        accounts.registerVerified(email);
+        for (int round = 0; round < 2; round++) {
+            for (int attempt = 0; attempt < 9; attempt++) {
+                assertThat(accounts.client().post(LOGIN, body("email", email, "password", "errada-123")).status())
+                        .isEqualTo(401);
+            }
+            assertThat(accounts.client().post(LOGIN, body("email", email, "password", PASSWORD)).status()).isEqualTo(200);
+        }
+    }
+
+    @Test
     void loginIsLimitedPerAccountEvenForUnknownEmails() {
         String email = uniqueEmail();
         for (int attempt = 0; attempt < 10; attempt++) {

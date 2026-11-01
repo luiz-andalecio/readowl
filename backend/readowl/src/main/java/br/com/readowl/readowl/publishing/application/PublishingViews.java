@@ -2,9 +2,9 @@ package br.com.readowl.readowl.publishing.application;
 
 import br.com.readowl.readowl.publishing.domain.Chapter;
 import br.com.readowl.readowl.publishing.domain.ChapterDraft;
-import br.com.readowl.readowl.publishing.domain.ChapterRevision;
 import br.com.readowl.readowl.publishing.domain.ChapterState;
 import br.com.readowl.readowl.publishing.domain.Volume;
+import br.com.readowl.readowl.publishing.infrastructure.ChapterRevisionRepository.RevisionRow;
 import tools.jackson.databind.JsonNode;
 
 import java.time.Instant;
@@ -54,10 +54,9 @@ public final class PublishingViews {
     public record RevisionView(int revisionNumber, int formatVersion, String createdByUsername, Instant createdAt,
                                boolean published) {
 
-        static RevisionView from(ChapterRevision revision, UUID publishedRevisionId) {
-            return new RevisionView(revision.getRevisionNumber(), revision.getFormatVersion(),
-                    revision.getCreatedBy().getUsername(), revision.getCreatedAt(),
-                    revision.getId().equals(publishedRevisionId));
+        static RevisionView from(RevisionRow revision, UUID publishedRevisionId) {
+            return new RevisionView(revision.revisionNumber(), revision.formatVersion(), revision.createdByUsername(),
+                    revision.createdAt(), revision.id().equals(publishedRevisionId));
         }
     }
 }

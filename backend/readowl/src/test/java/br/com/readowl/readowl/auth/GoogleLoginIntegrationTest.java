@@ -22,6 +22,8 @@ import org.springframework.test.context.ActiveProfiles;
 import org.springframework.web.util.UriComponentsBuilder;
 
 import java.net.URI;
+import java.nio.charset.StandardCharsets;
+import java.util.Base64;
 import java.util.Map;
 import java.util.UUID;
 
@@ -41,6 +43,7 @@ class GoogleLoginIntegrationTest {
     private static final String CALLBACK = "/login/oauth2/code/google";
     private static final String LINK = "/api/v1/auth/google/link";
     private static final String HOME = "https://readowl.test/";
+    private static final int FOURTEEN_DAYS_IN_SECONDS = 14 * 24 * 60 * 60;
 
     private static final FakeGoogle GOOGLE = new FakeGoogle();
 
@@ -85,6 +88,41 @@ class GoogleLoginIntegrationTest {
                 .getQueryParams().toSingleValueMap();
         GOOGLE.authorize(person, parameters.get("nonce"));
         return client.get(CALLBACK + "?code=codigo-de-teste&state=" + parameters.get("state"));
+    }
+
+    private int sessionTimeout(ApiClient client) {
+        String sessionId = new String(Base64.getDecoder().decode(client.cookie("SESSION").orElseThrow()), StandardCharsets.UTF_8);
+        return jdbc.queryForObject("SELECT max_inactive_interval FROM spring_session WHERE session_id = ?", Integer.class, sessionId);
+    }
+
+    @Test
+    void aSessionCreatedOnlyToStartTheLoginIsShortLived() {
+        ApiClient visitor = accounts.client();
+
+        visitor.get(START);
+
+        assertThat(sessionTimeout(visitor)).isEqualTo(600);
+    }
+
+    @Test
+    void finishingTheLoginGivesTheNormalSessionLifetime() {
+        ApiClient client = accounts.client();
+
+        signIn(client, person(uniqueEmail()));
+
+        assertThat(sessionTimeout(client)).isEqualTo(FOURTEEN_DAYS_IN_SECONDS);
+    }
+
+    @Test
+    void startingToLinkDoesNotShortenTheSessionOfALoggedInUser() {
+        String email = uniqueEmail();
+        accounts.registerVerified(email);
+        ApiClient client = accounts.loggedIn(email, PASSWORD);
+
+        assertThat(client.post(LINK, body("password", PASSWORD)).status()).isEqualTo(204);
+        client.get(START);
+
+        assertThat(sessionTimeout(client)).isEqualTo(FOURTEEN_DAYS_IN_SECONDS);
     }
 
     @Test

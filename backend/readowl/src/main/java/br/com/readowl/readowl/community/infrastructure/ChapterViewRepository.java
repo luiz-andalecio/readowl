@@ -34,4 +34,17 @@ public interface ChapterViewRepository extends JpaRepository<ChapterView, Chapte
             WHERE id = :chapterId AND EXISTS (SELECT 1 FROM book_counted)
             """, nativeQuery = true)
     int count(UUID userId, UUID chapterId, UUID bookId);
+
+    /**
+     * Passados os 2 minutos, a linha não tem mais efeito: sem ela, a próxima visita conta do mesmo jeito.
+     *
+     * @return quantas linhas foram removidas
+     */
+    @Modifying
+    @Query(value = """
+            DELETE FROM chapter_views WHERE ctid = ANY (ARRAY(
+                SELECT ctid FROM chapter_views WHERE last_counted_at < now() - interval '5 minutes'
+                LIMIT :batchSize FOR UPDATE SKIP LOCKED))
+            """, nativeQuery = true)
+    int deleteExpired(int batchSize);
 }

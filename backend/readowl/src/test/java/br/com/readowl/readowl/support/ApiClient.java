@@ -29,10 +29,19 @@ public final class ApiClient {
     private final String baseUrl;
     private final CookieManager cookies = new CookieManager(null, CookiePolicy.ACCEPT_ALL);
     private final HttpClient http;
+    private final Map<String, String> headers = new LinkedHashMap<>();
 
     public ApiClient(int port) {
         this.baseUrl = "http://localhost:" + port;
         this.http = HttpClient.newBuilder().cookieHandler(cookies).build();
+    }
+
+    /**
+     * Envia o cabeçalho em todos os pedidos deste cliente.
+     */
+    public ApiClient withHeader(String name, String value) {
+        headers.put(name, value);
+        return this;
     }
 
     public Response get(String path) {
@@ -84,7 +93,9 @@ public final class ApiClient {
     }
 
     private HttpRequest.Builder request(String path) {
-        return HttpRequest.newBuilder(URI.create(baseUrl + path));
+        HttpRequest.Builder request = HttpRequest.newBuilder(URI.create(baseUrl + path));
+        headers.forEach(request::header);
+        return request;
     }
 
     /**

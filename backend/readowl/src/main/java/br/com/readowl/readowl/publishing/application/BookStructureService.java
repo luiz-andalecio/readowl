@@ -11,6 +11,7 @@ import br.com.readowl.readowl.publishing.domain.Volume;
 import br.com.readowl.readowl.publishing.infrastructure.ChapterDraftRepository;
 import br.com.readowl.readowl.publishing.infrastructure.ChapterRepository;
 import br.com.readowl.readowl.publishing.infrastructure.VolumeRepository;
+import br.com.readowl.readowl.shared.config.ReadowlProperties;
 import br.com.readowl.readowl.shared.exception.ApiException;
 import br.com.readowl.readowl.shared.text.Slugs;
 import br.com.readowl.readowl.user.application.SessionUser;
@@ -40,14 +41,16 @@ public class BookStructureService {
     private final VolumeRepository volumes;
     private final ChapterRepository chapters;
     private final ChapterDraftRepository drafts;
+    private final ReadowlProperties.Limits limits;
 
     BookStructureService(BookAccess bookAccess, ChapterAccess chapterAccess, VolumeRepository volumes,
-                         ChapterRepository chapters, ChapterDraftRepository drafts) {
+                         ChapterRepository chapters, ChapterDraftRepository drafts, ReadowlProperties properties) {
         this.bookAccess = bookAccess;
         this.chapterAccess = chapterAccess;
         this.volumes = volumes;
         this.chapters = chapters;
         this.drafts = drafts;
+        this.limits = properties.limits();
     }
 
     @Transactional(readOnly = true)
@@ -60,6 +63,10 @@ public class BookStructureService {
 
     public VolumeView createVolume(UUID bookId, String title, SessionUser principal) {
         Book book = bookAccess.requireManageableLocked(bookId, principal);
+        if (volumes.countByBookId(bookId) >= limits.volumesPerBook()) {
+            throw ApiException.conflict("VOLUME_LIMIT_REACHED", "Esta obra atingiu o limite de volumes.")
+                    .withProperty("limit", limits.volumesPerBook());
+        }
         return VolumeView.from(volumes.saveAndFlush(new Volume(book, title.trim(), volumes.findMaxOrder(bookId) + 1)));
     }
 
@@ -98,6 +105,10 @@ public class BookStructureService {
 
     public ChapterView createChapter(UUID bookId, String title, UUID volumeId, SessionUser principal) {
         Book book = bookAccess.requireManageableLocked(bookId, principal);
+        if (chapters.countByBookId(bookId) >= limits.chaptersPerBook()) {
+            throw ApiException.conflict("CHAPTER_LIMIT_REACHED", "Esta obra atingiu o limite de capítulos.")
+                    .withProperty("limit", limits.chaptersPerBook());
+        }
         Volume volume = volumeId == null ? null : requireVolumeOfBook(volumeId, bookId);
         int order = (volumeId == null
                 ? chapters.findMaxOrderWithoutVolume(bookId)
@@ -120,9 +131,13 @@ public class BookStructureService {
 
     /**
      * Excluir apaga comentários e visualizações em cascata: um capítulo no ar precisa ser despublicado antes.
+     * Um capítulo oculto pela moderação é prova até ser restaurado, e vale também para administradores.
      */
     public void deleteChapter(UUID chapterId, SessionUser principal) {
         Chapter chapter = chapterAccess.requireManageableLocked(chapterId, principal);
+        if (chapter.isModerated()) {
+            throw ApiException.conflict("CHAPTER_UNDER_MODERATION", "Este capítulo foi ocultado pela moderação.");
+        }
         if (chapter.isPublished()) {
             throw ApiException.conflict("CHAPTER_PUBLISHED", "Despublique o capítulo antes de excluí-lo.");
         }

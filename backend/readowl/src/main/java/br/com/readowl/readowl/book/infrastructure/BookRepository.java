@@ -23,6 +23,14 @@ public interface BookRepository extends JpaRepository<Book, UUID> {
 
     boolean existsBySlug(String slug);
 
+    long countByAuthorId(UUID authorId);
+
+    /**
+     * A exclusão em cascata também apagaria os capítulos ocultos pela moderação.
+     */
+    @Query("select count(c) > 0 from Chapter c where c.book.id = :bookId and c.moderatedAt is not null")
+    boolean hasModeratedChapter(UUID bookId);
+
     @EntityGraph(attributePaths = "author")
     Page<Book> findByAuthorId(UUID authorId, Pageable pageable);
 

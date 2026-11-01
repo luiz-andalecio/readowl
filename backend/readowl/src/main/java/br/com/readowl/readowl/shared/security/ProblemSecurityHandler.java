@@ -45,7 +45,7 @@ class ProblemSecurityHandler implements AuthenticationEntryPoint, AccessDeniedHa
             write(response, ApiProblems.of(HttpStatus.FORBIDDEN, "CSRF_TOKEN_INVALID", "Token CSRF ausente ou inválido."));
             return;
         }
-        audit.recordDenied(request.getMethod(), request.getRequestURI());
+        audit.recordDenied(request.getMethod(), request.getServletPath());
         write(response, ApiProblems.of(HttpStatus.FORBIDDEN, "ACCESS_DENIED", "Você não tem permissão para esta operação."));
     }
 

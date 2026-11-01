@@ -1,5 +1,6 @@
 package br.com.readowl.readowl.user.application;
 
+import br.com.readowl.readowl.shared.exception.ApiException;
 import br.com.readowl.readowl.user.domain.Role;
 import org.springframework.security.core.AuthenticatedPrincipal;
 import org.springframework.security.core.GrantedAuthority;
@@ -28,6 +29,16 @@ public record SessionUser(UUID id, Role role) implements AuthenticatedPrincipal,
 
     public boolean isAdministrator() {
         return role.isAdministrator();
+    }
+
+    /**
+     * Quem modera não decide sobre o próprio conteúdo: o caso fica para outra pessoa. A administração, que tem
+     * acesso total e pode não ter a quem recorrer, fica de fora, e a ação continua na auditoria.
+     */
+    public void requireIndependentReview(UUID contentOwnerId) {
+        if (!isAdministrator() && id.equals(contentOwnerId)) {
+            throw ApiException.forbidden("OWN_CONTENT_MODERATION", "Outra pessoa da moderação precisa analisar o seu conteúdo.");
+        }
     }
 
     public List<GrantedAuthority> authorities() {

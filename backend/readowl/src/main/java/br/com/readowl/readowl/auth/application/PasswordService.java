@@ -41,6 +41,7 @@ public class PasswordService {
     public void requestReset(String email, String clientIp) {
         String normalizedEmail = User.normalizeEmail(email);
         rateLimiter.acquire(RateLimitPolicy.ACCOUNT_MAIL_IP, clientIp);
+        rateLimiter.acquire(RateLimitPolicy.ACCOUNT_MAIL_EMAIL_IP, normalizedEmail + "|" + clientIp);
         rateLimiter.acquire(RateLimitPolicy.ACCOUNT_MAIL_EMAIL, normalizedEmail);
         transaction.executeWithoutResult(status -> users.findByEmail(normalizedEmail)
                 .filter(User::isActive)

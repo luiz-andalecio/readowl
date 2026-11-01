@@ -12,6 +12,7 @@ import br.com.readowl.readowl.moderation.domain.ReportTargetType;
 import br.com.readowl.readowl.shared.api.PageRequests;
 import br.com.readowl.readowl.shared.api.PageResponse;
 import br.com.readowl.readowl.shared.exception.ApiException;
+import br.com.readowl.readowl.shared.ratelimit.ClientAddress;
 import br.com.readowl.readowl.user.application.SessionUser;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
@@ -69,7 +70,7 @@ class ModerationController {
     ReportReceipt report(@AuthenticationPrincipal SessionUser principal, @Valid @RequestBody ReportRequest body,
                          HttpServletRequest request) {
         return reports.create(new ReportService.NewReport(body.targetType(), body.targetId(), body.reason(), body.details()),
-                principal, request.getRemoteAddr());
+                principal, ClientAddress.of(request));
     }
 
     @GetMapping("/moderation/reports")

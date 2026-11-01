@@ -31,12 +31,40 @@ public class RateLimiter {
     }
 
     public void acquire(RateLimitPolicy policy, String subject) {
-        String key = policy.name() + ":" + Hashing.sha256Hex(subject);
-        long seconds = policy.getWindow().toSeconds();
-        Map<String, Object> bucket = jdbc.queryForMap(HIT, key, seconds, seconds, seconds);
-        if (((Number) bucket.get("hits")).intValue() > policy.getLimit()) {
+        Map<String, Object> bucket = hit(policy, subject);
+        if (exceeded(policy, bucket)) {
             throw new RateLimitExceededException(((Number) bucket.get("retry_after")).longValue());
         }
+    }
+
+    /**
+     * Para quem não recusa a operação ao passar do limite.
+     *
+     * @return false se o limite foi excedido
+     */
+    public boolean tryAcquire(RateLimitPolicy policy, String subject) {
+        return !exceeded(policy, hit(policy, subject));
+    }
+
+    /**
+     * Esquece as tentativas do sujeito. Contar antes de verificar e zerar no sucesso equivale a contar só as
+     * falhas, sem que pedidos simultâneos passem do limite.
+     */
+    public void reset(RateLimitPolicy policy, String subject) {
+        jdbc.update("DELETE FROM rate_limit_buckets WHERE bucket_key = ?", key(policy, subject));
+    }
+
+    private Map<String, Object> hit(RateLimitPolicy policy, String subject) {
+        long seconds = policy.getWindow().toSeconds();
+        return jdbc.queryForMap(HIT, key(policy, subject), seconds, seconds, seconds);
+    }
+
+    private static boolean exceeded(RateLimitPolicy policy, Map<String, Object> bucket) {
+        return ((Number) bucket.get("hits")).intValue() > policy.getLimit();
+    }
+
+    private static String key(RateLimitPolicy policy, String subject) {
+        return policy.name() + ":" + Hashing.sha256Hex(subject);
     }
 
     @Scheduled(fixedDelayString = "PT1H", initialDelayString = "PT1H")

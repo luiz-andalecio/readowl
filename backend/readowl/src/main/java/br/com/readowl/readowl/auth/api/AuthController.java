@@ -7,6 +7,7 @@ import br.com.readowl.readowl.auth.application.PasswordService;
 import br.com.readowl.readowl.auth.application.RegistrationService;
 import br.com.readowl.readowl.auth.application.SessionManager;
 import br.com.readowl.readowl.auth.application.SessionResponse;
+import br.com.readowl.readowl.shared.ratelimit.ClientAddress;
 import br.com.readowl.readowl.user.application.SessionUser;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
@@ -52,25 +53,25 @@ class AuthController {
     @PostMapping("/register")
     @ResponseStatus(HttpStatus.ACCEPTED)
     void register(@Valid @RequestBody RegisterRequest body, HttpServletRequest request) {
-        registration.register(body.name(), body.username(), body.email(), body.password(), request.getRemoteAddr());
+        registration.register(body.name(), body.username(), body.email(), body.password(), ClientAddress.of(request));
     }
 
     @PostMapping("/verify-email")
     @ResponseStatus(HttpStatus.NO_CONTENT)
     void verifyEmail(@Valid @RequestBody TokenRequest body, HttpServletRequest request) {
-        registration.verifyEmail(body.token(), request.getRemoteAddr());
+        registration.verifyEmail(body.token(), ClientAddress.of(request));
     }
 
     @PostMapping("/resend-verification")
     @ResponseStatus(HttpStatus.ACCEPTED)
     void resendVerification(@Valid @RequestBody EmailRequest body, HttpServletRequest request) {
-        registration.resendVerification(body.email(), request.getRemoteAddr());
+        registration.resendVerification(body.email(), ClientAddress.of(request));
     }
 
     @PostMapping("/login")
     SessionResponse login(@Valid @RequestBody LoginRequest body, HttpServletRequest request,
                           HttpServletResponse response) {
-        SessionUser user = login.authenticate(body.email(), body.password(), request.getRemoteAddr());
+        SessionUser user = login.authenticate(body.email(), body.password(), ClientAddress.of(request));
         sessions.establish(user, request, response);
         return login.describe(user);
     }
@@ -83,13 +84,13 @@ class AuthController {
     @PostMapping("/password/forgot")
     @ResponseStatus(HttpStatus.ACCEPTED)
     void forgotPassword(@Valid @RequestBody EmailRequest body, HttpServletRequest request) {
-        passwords.requestReset(body.email(), request.getRemoteAddr());
+        passwords.requestReset(body.email(), ClientAddress.of(request));
     }
 
     @PostMapping("/password/reset")
     @ResponseStatus(HttpStatus.NO_CONTENT)
     void resetPassword(@Valid @RequestBody ResetPasswordRequest body, HttpServletRequest request) {
-        passwords.reset(body.token(), body.newPassword(), request.getRemoteAddr());
+        passwords.reset(body.token(), body.newPassword(), ClientAddress.of(request));
     }
 
     /**

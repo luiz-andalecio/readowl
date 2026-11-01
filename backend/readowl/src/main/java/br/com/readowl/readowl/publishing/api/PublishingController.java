@@ -11,6 +11,8 @@ import br.com.readowl.readowl.publishing.application.PublishingViews.RevisionVie
 import br.com.readowl.readowl.publishing.application.PublishingViews.VolumeView;
 import br.com.readowl.readowl.shared.api.PageRequests;
 import br.com.readowl.readowl.shared.api.PageResponse;
+import br.com.readowl.readowl.shared.ratelimit.RateLimitPolicy;
+import br.com.readowl.readowl.shared.ratelimit.RateLimited;
 import br.com.readowl.readowl.user.application.SessionUser;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotBlank;
@@ -74,29 +76,34 @@ class PublishingController {
     }
 
     @PostMapping("/books/{bookId}/publish")
+    @RateLimited(RateLimitPolicy.AUTHORING_ACCOUNT)
     BookDetails publishBook(@AuthenticationPrincipal SessionUser principal, @PathVariable UUID bookId) {
         return publication.publishBook(bookId, principal);
     }
 
     @PostMapping("/books/{bookId}/unpublish")
+    @RateLimited(RateLimitPolicy.AUTHORING_ACCOUNT)
     BookDetails unpublishBook(@AuthenticationPrincipal SessionUser principal, @PathVariable UUID bookId) {
         return publication.unpublishBook(bookId, principal);
     }
 
     @PostMapping("/books/{bookId}/volumes")
     @ResponseStatus(HttpStatus.CREATED)
+    @RateLimited(RateLimitPolicy.AUTHORING_ACCOUNT)
     VolumeView createVolume(@AuthenticationPrincipal SessionUser principal, @PathVariable UUID bookId,
                             @Valid @RequestBody TitleRequest body) {
         return structure.createVolume(bookId, body.title(), principal);
     }
 
     @PutMapping("/books/{bookId}/volumes/order")
+    @RateLimited(RateLimitPolicy.AUTHORING_ACCOUNT)
     List<VolumeView> reorderVolumes(@AuthenticationPrincipal SessionUser principal, @PathVariable UUID bookId,
                                     @Valid @RequestBody VolumeOrderRequest body) {
         return structure.reorderVolumes(bookId, body.volumeIds(), principal);
     }
 
     @PatchMapping("/volumes/{volumeId}")
+    @RateLimited(RateLimitPolicy.AUTHORING_ACCOUNT)
     VolumeView renameVolume(@AuthenticationPrincipal SessionUser principal, @PathVariable UUID volumeId,
                             @Valid @RequestBody TitleRequest body) {
         return structure.renameVolume(volumeId, body.title(), principal);
@@ -104,24 +111,28 @@ class PublishingController {
 
     @DeleteMapping("/volumes/{volumeId}")
     @ResponseStatus(HttpStatus.NO_CONTENT)
+    @RateLimited(RateLimitPolicy.AUTHORING_ACCOUNT)
     void deleteVolume(@AuthenticationPrincipal SessionUser principal, @PathVariable UUID volumeId) {
         structure.deleteVolume(volumeId, principal);
     }
 
     @PostMapping("/books/{bookId}/chapters")
     @ResponseStatus(HttpStatus.CREATED)
+    @RateLimited(RateLimitPolicy.AUTHORING_ACCOUNT)
     ChapterView createChapter(@AuthenticationPrincipal SessionUser principal, @PathVariable UUID bookId,
                               @Valid @RequestBody NewChapterRequest body) {
         return structure.createChapter(bookId, body.title(), body.volumeId(), principal);
     }
 
     @PutMapping("/books/{bookId}/chapters/order")
+    @RateLimited(RateLimitPolicy.AUTHORING_ACCOUNT)
     List<ChapterView> reorderChapters(@AuthenticationPrincipal SessionUser principal, @PathVariable UUID bookId,
                                       @Valid @RequestBody ChapterOrderRequest body) {
         return structure.reorderChapters(bookId, body.volumeId(), body.chapterIds(), principal);
     }
 
     @PatchMapping("/chapters/{chapterId}")
+    @RateLimited(RateLimitPolicy.AUTHORING_ACCOUNT)
     ChapterView renameChapter(@AuthenticationPrincipal SessionUser principal, @PathVariable UUID chapterId,
                               @Valid @RequestBody TitleRequest body) {
         return structure.renameChapter(chapterId, body.title(), principal);
@@ -129,6 +140,7 @@ class PublishingController {
 
     @DeleteMapping("/chapters/{chapterId}")
     @ResponseStatus(HttpStatus.NO_CONTENT)
+    @RateLimited(RateLimitPolicy.AUTHORING_ACCOUNT)
     void deleteChapter(@AuthenticationPrincipal SessionUser principal, @PathVariable UUID chapterId) {
         structure.deleteChapter(chapterId, principal);
     }
@@ -139,18 +151,21 @@ class PublishingController {
     }
 
     @PutMapping("/chapters/{chapterId}/draft")
+    @RateLimited(RateLimitPolicy.DRAFT_SAVE_ACCOUNT)
     DraftView saveDraft(@AuthenticationPrincipal SessionUser principal, @PathVariable UUID chapterId,
                         @Valid @RequestBody SaveDraftRequest body) {
         return drafts.save(chapterId, body.version(), body.document(), principal);
     }
 
     @PostMapping("/chapters/{chapterId}/publish")
+    @RateLimited(RateLimitPolicy.PUBLICATION_ACCOUNT)
     ChapterView publishChapter(@AuthenticationPrincipal SessionUser principal, @PathVariable UUID chapterId,
                                @Valid @RequestBody PublishChapterRequest body) {
         return publication.publishChapter(chapterId, body.draftVersion(), principal);
     }
 
     @PostMapping("/chapters/{chapterId}/unpublish")
+    @RateLimited(RateLimitPolicy.AUTHORING_ACCOUNT)
     ChapterView unpublishChapter(@AuthenticationPrincipal SessionUser principal, @PathVariable UUID chapterId) {
         return publication.unpublishChapter(chapterId, principal);
     }
