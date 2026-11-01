@@ -18,13 +18,16 @@ import org.springframework.web.bind.annotation.RestControllerAdvice;
 import org.springframework.web.context.request.WebRequest;
 import org.springframework.web.servlet.mvc.method.annotation.ResponseEntityExceptionHandler;
 
+import java.sql.SQLException;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 @RestControllerAdvice
 public class GlobalExceptionHandler extends ResponseEntityExceptionHandler {
 
     private static final Logger log = LoggerFactory.getLogger(GlobalExceptionHandler.class);
+    private static final Set<String> UNSTORABLE_TEXT_STATES = Set.of("22021", "22P05");
 
     @ExceptionHandler(ApiException.class)
     ProblemDetail handleApiException(ApiException ex) {
@@ -48,6 +51,9 @@ public class GlobalExceptionHandler extends ResponseEntityExceptionHandler {
 
     @ExceptionHandler(DataIntegrityViolationException.class)
     ProblemDetail handleDataIntegrity(DataIntegrityViolationException ex) {
+        if (isUnstorableText(ex)) {
+            return ApiProblems.of(HttpStatus.BAD_REQUEST, "INVALID_TEXT", "O texto tem caracteres não permitidos.");
+        }
         // A mensagem do banco pode conter valores enviados pelo usuário: registra apenas a constraint.
         log.warn("Violacao de integridade: constraint={}", constraintName(ex));
         return ApiProblems.of(HttpStatus.CONFLICT, "DATA_CONFLICT",
@@ -93,6 +99,19 @@ public class GlobalExceptionHandler extends ResponseEntityExceptionHandler {
             ApiProblems.decorate(problem, defaultCode(status));
         }
         return response;
+    }
+
+    /**
+     * O PostgreSQL não guarda o caractere nulo, em nenhum campo de texto ou JSON. O código do erro não varia
+     * com o idioma do servidor, ao contrário da mensagem.
+     */
+    private static boolean isUnstorableText(Throwable failure) {
+        for (Throwable cause = failure; cause != null; cause = cause.getCause()) {
+            if (cause instanceof SQLException sql && UNSTORABLE_TEXT_STATES.contains(sql.getSQLState())) {
+                return true;
+            }
+        }
+        return false;
     }
 
     private static boolean hasCode(ProblemDetail problem) {

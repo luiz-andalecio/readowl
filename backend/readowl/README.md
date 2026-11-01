@@ -120,6 +120,9 @@ Os testes de integração usam PostgreSQL real, de duas formas:
 | Suíte | O que cobre |
 |---|---|
 | `MigrationIntegrationTest` | Migrations em banco vazio, tabelas criadas, datas com fuso |
+| `MigrationUpgradeIntegrationTest` | Atualização de um banco com dados a partir da versão 6, falha sem alterar nada |
+| `QueryCountIntegrationTest` | Listas sem uma consulta por item, comparando páginas de tamanhos diferentes |
+| `UnstorableTextIntegrationTest` | Caractere nulo em corpos e parâmetros responde 400, sem deixar nada gravado |
 | `SchemaConstraintsIntegrationTest` | Unicidade, FKs compostas, `CHECK`, cascatas e reordenação |
 | `EntityMappingIntegrationTest` | Mapeamentos JPA, carga LAZY, JSONB, lock otimista, rascunho separado do publicado |
 | `SecurityBaselineIntegrationTest` | Negação por padrão, CSRF, Actuator, formato dos erros |

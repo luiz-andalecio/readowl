@@ -65,6 +65,7 @@ Erros de validação trazem também `errors`:
 |---|---|---|
 | 400 | `VALIDATION_FAILED` | Campos inválidos |
 | 400 | `BAD_REQUEST` | Corpo malformado ou parâmetro de tipo errado |
+| 400 | `INVALID_TEXT` | Texto com o caractere nulo, que não pode ser guardado |
 | 401 | `UNAUTHENTICATED` | Requisição sem sessão válida |
 | 403 | `CSRF_TOKEN_INVALID` | Token CSRF ausente ou incorreto |
 | 403 | `ACCESS_DENIED` | Sem permissão para a operação |
@@ -1025,7 +1026,7 @@ Encerra a denúncia. `note` é opcional, até 1000 caracteres. **200**, com o co
 | `POST /moderation/books/{id}/hide` | Tira a obra do ar. O autor não consegue republicar |
 | `POST /moderation/chapters/{id}/hide` | Tira o capítulo do ar. O autor não consegue republicar |
 | `POST /moderation/comments/{id}/hide` | Oculta o comentário. A pessoa não consegue editar nem excluir |
-| `POST /moderation/{books, chapters ou comments}/{id}/restore` | Desfaz a ocultação |
+| `POST /moderation/books/{id}/restore`, `POST /moderation/chapters/{id}/restore` e `POST /moderation/comments/{id}/restore` | Desfaz a ocultação |
 
 Todas exigem o motivo, de até 500 caracteres, que fica na auditoria. **204**, sem corpo.
 
