@@ -30,7 +30,7 @@ import static org.assertj.core.api.Assertions.assertThat;
  */
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT,
         properties = {"TRUSTED_PROXIES=127\\.0\\.0\\.1|0:0:0:0:0:0:0:1", "logging.structured.format.console=",
-                "spring.flyway.enabled=true", "management.server.port=0"})
+                "spring.flyway.enabled=true", "management.server.port=0", "PRIVILEGED_GOOGLE_LOGIN_REQUIRED=false"})
 @ActiveProfiles({"test", "prod"})
 @Import({TestDatabaseConfiguration.class, ApiTestConfiguration.class})
 class TrustedProxyIntegrationTest {

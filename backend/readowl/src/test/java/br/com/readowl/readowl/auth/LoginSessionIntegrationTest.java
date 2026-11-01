@@ -82,7 +82,7 @@ class LoginSessionIntegrationTest {
         ApiClient.Response login = client.post(LOGIN, body("email", email, "password", PASSWORD));
 
         assertThat(login.setCookie("SESSION").orElseThrow())
-                .contains("HttpOnly").contains("SameSite=Lax").contains("Path=/").contains("Max-Age=1209600");
+                .contains("HttpOnly").contains("SameSite=Lax").contains("Path=/").doesNotContain("Max-Age");
 
         String csrfCookie = client.get("/api/v1/auth/csrf").setCookie("XSRF-TOKEN").orElseThrow();
         assertThat(csrfCookie).contains("SameSite=Lax").doesNotContain("HttpOnly");

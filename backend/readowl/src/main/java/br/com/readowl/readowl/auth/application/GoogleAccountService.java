@@ -2,6 +2,7 @@ package br.com.readowl.readowl.auth.application;
 
 import br.com.readowl.readowl.auth.domain.Account;
 import br.com.readowl.readowl.auth.infrastructure.AccountRepository;
+import br.com.readowl.readowl.shared.audit.SecurityEvents;
 import br.com.readowl.readowl.shared.exception.ApiException;
 import br.com.readowl.readowl.shared.ratelimit.RateLimitPolicy;
 import br.com.readowl.readowl.shared.ratelimit.RateLimiter;
@@ -34,9 +35,14 @@ public class GoogleAccountService {
     private final PasswordEncoder passwordEncoder;
     private final RateLimiter rateLimiter;
     private final ObjectProvider<ClientRegistrationRepository> googleRegistration;
+    private final AccountMails mails;
+    private final SecurityEvents events;
 
     GoogleAccountService(UserService users, AccountRepository accounts, PasswordEncoder passwordEncoder,
-                         RateLimiter rateLimiter, ObjectProvider<ClientRegistrationRepository> googleRegistration) {
+                         RateLimiter rateLimiter, ObjectProvider<ClientRegistrationRepository> googleRegistration,
+                         AccountMails mails, SecurityEvents events) {
+        this.mails = mails;
+        this.events = events;
         this.users = users;
         this.accounts = accounts;
         this.passwordEncoder = passwordEncoder;
@@ -48,7 +54,9 @@ public class GoogleAccountService {
     public SessionUser login(GoogleIdentity identity) {
         Optional<Account> linked = accounts.findByProviderAndProviderAccountId(PROVIDER, identity.subject());
         if (linked.isPresent()) {
-            return activeSessionUser(linked.get().getUser());
+            SessionUser user = activeSessionUser(linked.get().getUser());
+            events.record(SecurityEvents.Event.GOOGLE_LOGIN_SUCCEEDED, user.id());
+            return user;
         }
         if (!identity.emailVerified()) {
             throw ApiException.forbidden("GOOGLE_EMAIL_UNVERIFIED", "O Google não confirmou este e-mail.");
@@ -59,6 +67,7 @@ public class GoogleAccountService {
         }
         User user = users.createVerified(displayName(identity), identity.email(), Instant.now());
         accounts.saveAndFlush(new Account(user, PROVIDER, identity.subject()));
+        events.record(SecurityEvents.Event.GOOGLE_LOGIN_SUCCEEDED, user.getId());
         return activeSessionUser(user);
     }
 
@@ -93,6 +102,8 @@ public class GoogleAccountService {
                 throw ApiException.conflict("GOOGLE_ALREADY_LINKED", "Esta conta já está vinculada ao Google.");
             }
             accounts.saveAndFlush(new Account(user, PROVIDER, identity.subject()));
+            mails.request(AccountMailType.GOOGLE_LINKED, user.getEmail());
+            events.record(SecurityEvents.Event.GOOGLE_LINKED, userId);
         }
         return activeSessionUser(user);
     }

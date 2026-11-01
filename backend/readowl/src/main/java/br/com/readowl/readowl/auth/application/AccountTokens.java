@@ -1,8 +1,10 @@
 package br.com.readowl.readowl.auth.application;
 
+import br.com.readowl.readowl.auth.domain.EmailChangeToken;
 import br.com.readowl.readowl.auth.domain.OneTimeToken;
 import br.com.readowl.readowl.auth.domain.PasswordResetToken;
 import br.com.readowl.readowl.auth.domain.VerificationToken;
+import br.com.readowl.readowl.auth.infrastructure.EmailChangeTokenRepository;
 import br.com.readowl.readowl.auth.infrastructure.PasswordResetTokenRepository;
 import br.com.readowl.readowl.auth.infrastructure.VerificationTokenRepository;
 import br.com.readowl.readowl.shared.exception.ApiException;
@@ -35,8 +37,11 @@ class AccountTokens {
     private final SecureRandom random = new SecureRandom();
     private final VerificationTokenRepository verificationTokens;
     private final PasswordResetTokenRepository resetTokens;
+    private final EmailChangeTokenRepository emailChangeTokens;
 
-    AccountTokens(VerificationTokenRepository verificationTokens, PasswordResetTokenRepository resetTokens) {
+    AccountTokens(VerificationTokenRepository verificationTokens, PasswordResetTokenRepository resetTokens,
+                  EmailChangeTokenRepository emailChangeTokens) {
+        this.emailChangeTokens = emailChangeTokens;
         this.verificationTokens = verificationTokens;
         this.resetTokens = resetTokens;
     }
@@ -60,6 +65,23 @@ class AccountTokens {
         String token = newToken();
         resetTokens.save(new PasswordResetToken(user, Hashing.sha256Hex(token), Instant.now().plus(RESET_VALIDITY)));
         return token;
+    }
+
+    /**
+     * @return o token em claro, que só existe aqui e no e-mail
+     */
+    String issueEmailChange(User user, String newEmail) {
+        emailChangeTokens.deleteUnconsumedByUserId(user.getId());
+        String token = newToken();
+        emailChangeTokens.save(new EmailChangeToken(user, Hashing.sha256Hex(token), newEmail, Instant.now().plus(RESET_VALIDITY)));
+        return token;
+    }
+
+    EmailChangeToken consumeEmailChange(String token) {
+        Optional<EmailChangeToken> stored = emailChangeTokens.findByTokenHash(Hashing.sha256Hex(token));
+        User user = consume(stored);
+        emailChangeTokens.deleteUnconsumedByUserId(user.getId());
+        return stored.orElseThrow();
     }
 
     User consumeVerification(String token) {
@@ -103,5 +125,6 @@ class AccountTokens {
         Instant limit = Instant.now().minus(EXPIRED_RETENTION);
         verificationTokens.deleteExpiredBefore(limit);
         resetTokens.deleteExpiredBefore(limit);
+        emailChangeTokens.deleteExpiredBefore(limit);
     }
 }

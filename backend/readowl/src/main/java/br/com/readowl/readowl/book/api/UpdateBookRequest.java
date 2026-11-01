@@ -1,6 +1,7 @@
 package br.com.readowl.readowl.book.api;
 
 import br.com.readowl.readowl.book.domain.BookStatus;
+import br.com.readowl.readowl.book.domain.ContentRating;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Pattern;
@@ -19,6 +20,7 @@ record UpdateBookRequest(
         @Size(max = 2000) @Pattern(regexp = BookRules.NOT_BLANK, message = "não deve estar em branco") String synopsis,
         @Size(max = 50) String releaseFrequency,
         BookStatus status,
+        ContentRating contentRating,
         @Size(min = 1, max = 5) List<@NotNull UUID> genreIds,
         @Size(max = 10)
         List<@NotBlank @Size(max = 50) @Pattern(regexp = BookRules.TAG, message = BookRules.TAG_MESSAGE) String> tags,

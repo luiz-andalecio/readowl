@@ -4,6 +4,7 @@ import br.com.readowl.readowl.shared.api.PageResponse;
 import br.com.readowl.readowl.shared.audit.AuditContext;
 import br.com.readowl.readowl.shared.audit.AuditTrail;
 import br.com.readowl.readowl.shared.exception.ApiException;
+import br.com.readowl.readowl.shared.security.RecentLogin;
 import br.com.readowl.readowl.user.domain.Role;
 import br.com.readowl.readowl.user.domain.User;
 import br.com.readowl.readowl.user.domain.UserStatus;
@@ -30,8 +31,13 @@ public class AdminUserService {
     private final UserService userService;
     private final ApplicationEventPublisher events;
     private final AuditTrail audit;
+    private final RecentLogin recentLogin;
+    private final PrivilegedAccessPolicy privilegedAccess;
 
-    AdminUserService(UserRepository users, UserService userService, ApplicationEventPublisher events, AuditTrail audit) {
+    AdminUserService(UserRepository users, UserService userService, ApplicationEventPublisher events, AuditTrail audit,
+                     RecentLogin recentLogin, PrivilegedAccessPolicy privilegedAccess) {
+        this.recentLogin = recentLogin;
+        this.privilegedAccess = privilegedAccess;
         this.users = users;
         this.userService = userService;
         this.events = events;
@@ -71,14 +77,26 @@ public class AdminUserService {
 
     public AdminUserView update(UUID id, UserChanges changes, SessionUser actor) {
         User user = userService.requireById(id);
+        if (user.isDeleted()) {
+            throw ApiException.conflict("ACCOUNT_DELETED", "Esta conta foi excluída.");
+        }
+        if (changes.status() == UserStatus.DELETED) {
+            throw ApiException.badRequest("INVALID_STATUS", "A exclusão de uma conta só pode ser feita pela própria pessoa.");
+        }
         Map<String, Object> audited = auditedChanges(user, changes);
         boolean loses = (changes.role() != null && changes.role() != Role.ROOT)
                 || changes.status() == UserStatus.SUSPENDED;
         if (user.getRole() == Role.ROOT && user.isActive() && loses) {
-            requireAnotherActiveRoot(id);
+            userService.requireAnotherActiveRoot(id);
         }
         boolean accessChanged = (changes.role() != null && changes.role() != user.getRole())
                 || (changes.status() != null && changes.status() != user.getStatus());
+        if (accessChanged) {
+            recentLogin.require();
+        }
+        if (changes.role() != null && changes.role() != Role.USER && changes.role() != user.getRole()) {
+            privilegedAccess.requireEligible(id);
+        }
 
         if (changes.username() != null && !User.normalizeUsername(changes.username()).equals(user.getUsername())) {
             if (userService.isUsernameUnavailable(changes.username())) {
@@ -119,19 +137,6 @@ public class AdminUserService {
     private static void addChange(Map<String, Object> audited, String field, Object before, Object after) {
         if (after != null && !after.equals(before)) {
             audited.put(field, Map.of("from", before, "to", after));
-        }
-    }
-
-    /**
-     * Sem root ativo, ninguém mais conseguiria administrar contas pela aplicação. O bloqueio impede que
-     * dois roots removam um ao outro ao mesmo tempo.
-     */
-    private void requireAnotherActiveRoot(UUID id) {
-        long others = users.findLockedByRoleAndStatus(Role.ROOT, UserStatus.ACTIVE).stream()
-                .filter(root -> !root.getId().equals(id))
-                .count();
-        if (others == 0) {
-            throw ApiException.conflict("LAST_ROOT", "Esta é a última conta root ativa.");
         }
     }
 }

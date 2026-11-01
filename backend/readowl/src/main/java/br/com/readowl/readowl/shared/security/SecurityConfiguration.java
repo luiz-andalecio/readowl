@@ -34,6 +34,7 @@ class SecurityConfiguration {
     private static final String[] PUBLIC_READS = {
             "/api/v1/auth/csrf",
             "/api/v1/auth/session",
+            "/api/v1/auth/terms",
             "/api/v1/users/{username}",
             "/api/v1/genres",
             "/api/v1/tags",
@@ -66,6 +67,8 @@ class SecurityConfiguration {
                         .requestMatchers(internalPort ? EndpointRequest.toAnyEndpoint()
                                 : EndpointRequest.to(HealthEndpoint.class)).permitAll()
                         .requestMatchers(HttpMethod.GET, "/livez", "/readyz").permitAll()
+                        // Quem esteve em qual IP só é visto pelo root, e a leitura fica na auditoria.
+                        .requestMatchers("/api/v1/admin/access-records", "/api/v1/admin/access-records/**").hasRole("ROOT")
                         // Editar usuários é exclusivo do root; o restante da administração, de admin e root.
                         .requestMatchers(HttpMethod.PATCH, "/api/v1/admin/users/**").hasRole("ROOT")
                         .requestMatchers("/api/v1/admin/**").hasAnyRole("ADMIN", "ROOT")
@@ -78,6 +81,7 @@ class SecurityConfiguration {
                         .requestMatchers(HttpMethod.POST,
                                 "/api/v1/auth/register",
                                 "/api/v1/auth/verify-email",
+                                "/api/v1/auth/email/confirm",
                                 "/api/v1/auth/resend-verification",
                                 "/api/v1/auth/login",
                                 "/api/v1/auth/password/forgot",

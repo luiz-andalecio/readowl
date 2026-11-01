@@ -15,12 +15,15 @@ import lombok.NoArgsConstructor;
 
 import java.time.Instant;
 import java.util.Locale;
+import java.util.UUID;
 
 @Entity
 @Table(name = "users")
 @Getter
 @NoArgsConstructor(access = AccessLevel.PROTECTED)
 public class User extends BaseEntity {
+
+    public static final String DELETED_NAME = "Usuário removido";
 
     @NotBlank
     @Size(max = 255)
@@ -58,6 +61,14 @@ public class User extends BaseEntity {
     @Column(nullable = false)
     private boolean emailNewChapters;
 
+    private Instant deletedAt;
+
+    @Size(max = 20)
+    @Column(length = 20)
+    private String termsVersion;
+
+    private Instant termsAcceptedAt;
+
     public User(String name, String username, String email, String passwordHash) {
         this.name = name.trim();
         this.username = normalizeUsername(username);
@@ -77,6 +88,27 @@ public class User extends BaseEntity {
         return status == UserStatus.ACTIVE;
     }
 
+    public boolean isSuspended() {
+        return status == UserStatus.SUSPENDED;
+    }
+
+    public boolean isDeleted() {
+        return status == UserStatus.DELETED;
+    }
+
+    public boolean hasPrivilegedRole() {
+        return role != Role.USER;
+    }
+
+    public boolean hasAcceptedTerms(String version) {
+        return version.equals(termsVersion);
+    }
+
+    public void acceptTerms(String version, Instant at) {
+        this.termsVersion = version;
+        this.termsAcceptedAt = at;
+    }
+
     public boolean isEmailVerified() {
         return emailVerifiedAt != null;
     }
@@ -93,6 +125,28 @@ public class User extends BaseEntity {
 
     public void changeEmailNewChapters(boolean enabled) {
         this.emailNewChapters = enabled;
+    }
+
+    public void changeEmail(String email) {
+        this.email = normalizeEmail(email);
+    }
+
+    /**
+     * Retira tudo o que identifica a pessoa. A linha continua, porque comentários, denúncias e a auditoria apontam para
+     * ela. O sufixo aleatório libera o e-mail e o nome de usuário, sem permitir ligar a conta a eles.
+     */
+    public void anonymize(Instant at) {
+        String suffix = UUID.randomUUID().toString().replace("-", "");
+        this.name = DELETED_NAME;
+        this.username = "removido-" + suffix.substring(0, 12);
+        this.email = "removido-" + suffix + "@removido.invalid";
+        this.passwordHash = null;
+        this.description = null;
+        this.role = Role.USER;
+        this.status = UserStatus.DELETED;
+        this.emailVerifiedAt = null;
+        this.emailNewChapters = false;
+        this.deletedAt = at;
     }
 
     public void changeUsername(String username) {

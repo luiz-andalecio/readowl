@@ -39,8 +39,9 @@ public class RegistrationService {
         this.transaction = transaction;
     }
 
-    public void register(String name, String username, String email, String password, String clientIp) {
+    public void register(String name, String username, String email, String password, String termsVersion, String clientIp) {
         String normalizedEmail = User.normalizeEmail(email);
+        users.requireCurrentTerms(termsVersion);
         rateLimiter.acquire(RateLimitPolicy.REGISTER_IP, clientIp);
         rateLimiter.acquire(RateLimitPolicy.REGISTER_EMAIL, normalizedEmail);
         // Calculado em todos os casos: o tempo de resposta também não pode revelar se o e-mail existe.
@@ -55,7 +56,7 @@ public class RegistrationService {
                     mails.request(AccountMailType.ACCOUNT_ALREADY_EXISTS, normalizedEmail);
                     return;
                 }
-                users.create(name, username, normalizedEmail, passwordHash);
+                users.create(name, username, normalizedEmail, passwordHash).acceptTerms(termsVersion, Instant.now());
                 mails.request(AccountMailType.VERIFY_EMAIL, normalizedEmail);
             });
         } catch (DataIntegrityViolationException ex) {

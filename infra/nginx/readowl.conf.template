@@ -22,7 +22,7 @@ limit_req_status 429;
 # O log de erros traz a URL e o Referer. Um limite atingido aparece no log de acesso, com status 429.
 limit_req_log_level notice;
 
-# Sem query string, Referer e cookies, que podem trazer termos de busca e tokens dos links enviados por e-mail.
+# Sem query string, Referer e cookies, que podem trazer termos de busca e dados pessoais.
 log_format readowl escape=json
     '{"time":"$time_iso8601","client":"$remote_addr","method":"$request_method","path":"$uri","status":$status,'
     '"bytes":$body_bytes_sent,"duration":$request_time,"upstream_duration":"$upstream_response_time",'

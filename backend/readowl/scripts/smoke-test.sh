@@ -121,6 +121,8 @@ check 'as tabelas pertencem ao usuario de migration' '0' \
 
 export APP_PUBLIC_URL='https://readowl.test' MAIL_FROM='no-reply@readowl.test' SMTP_HOST='localhost' SMTP_PORT='2525'
 export TRUSTED_PROXIES='127\.0\.0\.1|0:0:0:0:0:0:0:1' MANAGEMENT_PORT
+# Sem Google neste teste: a exigência fica em PrivilegedLoginIntegrationTest.
+export PRIVILEGED_GOOGLE_LOGIN_REQUIRED=false
 # A credencial de migration nao chega a aplicacao, como no Compose.
 env -u DB_MIGRATION_USER -u DB_MIGRATION_PASSWORD "$JAVA" -jar "$EXTRACTED" --spring.profiles.active=prod --server.port="$PORT" > "$LOG" 2>&1 &
 APP=$!
@@ -157,7 +159,9 @@ contains 'cookie CSRF com Secure' 'Secure' "$(cookie_line __Host-XSRF-TOKEN)"
 contains 'cookie CSRF na raiz' 'Path=/' "$(cookie_line __Host-XSRF-TOKEN)"
 TOKEN="$(cookie_value __Host-XSRF-TOKEN)"
 
-REGISTER="{\"name\":\"Smoke\",\"username\":\"smoke-user\",\"email\":\"$EMAIL\",\"password\":\"$PASSWORD\"}"
+request GET /api/v1/auth/terms
+TERMS_VERSION="$(sed -E 's/.*"version":"([^"]+)".*/\1/' "$WORK/body")"
+REGISTER="{\"name\":\"Smoke\",\"username\":\"smoke-user\",\"email\":\"$EMAIL\",\"password\":\"$PASSWORD\",\"termsVersion\":\"$TERMS_VERSION\",\"ageConfirmed\":true}"
 request POST /api/v1/auth/register "$REGISTER"
 check 'POST sem CSRF' '403' "$STATUS"
 request POST /api/v1/auth/register "$REGISTER" "__Host-XSRF-TOKEN=$TOKEN" "$TOKEN"
@@ -192,21 +196,46 @@ refused_to_app 'CREATE TABLE x (id int)'
 refused_to_app 'SELECT count(*) FROM flyway_schema_history'
 check 'a auditoria continua la' '1' "$(sql 'SELECT count(*) FROM audit_log')"
 
+request GET /api/v1/users/me/export '' "$SESSION"
+check 'exportacao de dados' '200' "$STATUS"
+contains 'exportacao com o e-mail da conta' "$EMAIL" "$(cat "$WORK/body")"
+check 'registro de acesso gravado com o usuario da aplicacao' 'LOGIN_SUCCEEDED' "$(sql "SELECT action FROM access_records WHERE action = 'LOGIN_SUCCEEDED' LIMIT 1")"
+
+refused_to_app 'DELETE FROM access_records'
+PGPASSWORD="$DB_PASSWORD" "$PSQL" -q -At -v ON_ERROR_STOP=1 -h "$DB_HOST" -p "$DB_PORT" -U "$DB_USER" -d "$DB_NAME" -c "SELECT purge_audit_log(interval '730 days'), purge_access_records(interval '183 days')" > /dev/null
+check 'a limpeza da auditoria funciona com o usuario da aplicacao' '0' "$?"
+refused_to_app "SELECT purge_audit_log(interval '1 day')"
+
 request POST /api/v1/auth/logout '{}' "$BOTH" "$TOKEN"
 check 'logout' '204' "$STATUS"
 request GET /api/v1/users/me '' "$SESSION"
 check 'sessao encerrada' '401' "$STATUS"
 
+# A exclusao de conta com o usuario da aplicacao, que nao apaga auditoria nem registros de acesso.
+OTHER='smoke-exclusao@example.com'
+request GET /api/v1/auth/csrf
+TOKEN="$(cookie_value __Host-XSRF-TOKEN)"
+request POST /api/v1/auth/register "{\"name\":\"Sai\",\"username\":\"smoke-sai\",\"email\":\"$OTHER\",\"password\":\"$PASSWORD\",\"termsVersion\":\"$TERMS_VERSION\",\"ageConfirmed\":true}" "__Host-XSRF-TOKEN=$TOKEN" "$TOKEN"
+sql "UPDATE users SET email_verified_at = now() WHERE email = '$OTHER'"
+request POST /api/v1/auth/login "{\"email\":\"$OTHER\",\"password\":\"$PASSWORD\"}" "__Host-XSRF-TOKEN=$TOKEN" "$TOKEN"
+SESSION="__Host-SESSION=$(cookie_value __Host-SESSION)"
+request GET /api/v1/auth/csrf '' "$SESSION"
+TOKEN="$(cookie_value __Host-XSRF-TOKEN)"
+request DELETE /api/v1/users/me "{\"password\":\"$PASSWORD\"}" "$SESSION; __Host-XSRF-TOKEN=$TOKEN" "$TOKEN"
+check 'exclusao de conta' '204' "$STATUS"
+check 'conta anonimizada' 'DELETED' "$(sql "SELECT status FROM users WHERE username LIKE 'removido-%'")"
+check 'e-mail fora da tabela de contas' '0' "$(sql "SELECT count(*) FROM users WHERE email = '$OTHER'")"
+
 # Um ciclo do worker, com o SMTP fora do ar: o e-mail da conta precisa continuar na fila.
 sleep 17
-check 'e-mail continua na fila' '1' "$(sql 'SELECT count(*) FROM account_mail_queue')"
+check 'e-mails continuam na fila' '2' "$(sql 'SELECT count(*) FROM account_mail_queue')"
 
 if [ "$DB_SSL_MODE" = verify-full ]; then
     check 'a aplicacao conecta com TLS' 'f' "$(sql "SELECT bool_or(NOT s.ssl) FROM pg_stat_ssl s JOIN pg_stat_activity a USING (pid) WHERE a.usename = '$DB_USER'")"
 fi
 
 check 'saude na porta interna' '200' "$(curl -s -o /dev/null -w '%{http_code}' "$INTERNAL/actuator/health/readiness")"
-contains 'fila de e-mails nas metricas' '"value":1.0' "$(curl -s "$INTERNAL/actuator/metrics/readowl.account_mail.pending")"
+contains 'fila de e-mails nas metricas' '"value":2.0' "$(curl -s "$INTERNAL/actuator/metrics/readowl.account_mail.pending")"
 for metric in http.server.requests hikaricp.connections.pending readowl.outbox.failed; do
     check "metrica $metric" '200' "$(curl -s -o /dev/null -w '%{http_code}' "$INTERNAL/actuator/metrics/$metric")"
 done
@@ -215,6 +244,7 @@ check 'configuracao fora da porta interna' '401' "$(curl -s -o /dev/null -w '%{h
 contains 'logs em ECS' '"@timestamp"' "$(head -40 "$LOG")"
 check 'senha fora dos logs' '0' "$(grep -c -F "$PASSWORD" "$LOG")"
 check 'e-mail fora dos logs' '0' "$(grep -c -F "$EMAIL" "$LOG")"
+check 'e-mail da conta excluida fora dos logs' '0' "$(grep -c -F "$OTHER" "$LOG")"
 check 'token CSRF fora dos logs' '0' "$(grep -c -F "$TOKEN" "$LOG")"
 check 'senha do banco fora dos logs' '0' "$(cat "$LOG" "$WORK/migration.log" | grep -c -F "$DB_MIGRATION_PASSWORD")"
 # O unico erro esperado e o aviso de que o SMTP nao esta acessivel.

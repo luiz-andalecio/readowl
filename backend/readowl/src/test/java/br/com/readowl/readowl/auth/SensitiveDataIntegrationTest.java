@@ -60,7 +60,7 @@ class SensitiveDataIntegrationTest {
 
     @Test
     void pendingMailDoesNotPrintTheAddress() {
-        PendingAccountMail pending = new PendingAccountMail(UUID.randomUUID(), AccountMailType.RESET_PASSWORD, "a@b.com");
+        PendingAccountMail pending = new PendingAccountMail(UUID.randomUUID(), AccountMailType.RESET_PASSWORD, "a@b.com", null);
 
         assertThat(pending.toString()).doesNotContain("a@b.com");
     }

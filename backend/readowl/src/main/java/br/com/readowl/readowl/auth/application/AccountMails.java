@@ -19,6 +19,7 @@ import org.springframework.transaction.support.TransactionOperations;
 
 import java.util.List;
 import java.util.Optional;
+import java.util.UUID;
 
 /**
  * E-mails de conta. O pedido é gravado na transação da operação, e o envio tenta sair logo depois do commit. Se o
@@ -53,7 +54,15 @@ public class AccountMails {
 
     @Transactional(propagation = Propagation.MANDATORY)
     public void request(AccountMailType type, String email) {
-        events.publishEvent(new AccountMailRequested(queue.enqueue(type, email)));
+        events.publishEvent(new AccountMailRequested(queue.enqueue(type, email, null)));
+    }
+
+    /**
+     * O link vai para um endereço que ainda não é o da conta.
+     */
+    @Transactional(propagation = Propagation.MANDATORY)
+    public void requestEmailChange(String newEmail, UUID userId) {
+        events.publishEvent(new AccountMailRequested(queue.enqueue(AccountMailType.EMAIL_CHANGE_CONFIRMATION, newEmail, userId)));
     }
 
     @Async
@@ -98,7 +107,11 @@ public class AccountMails {
      * @return vazio se não há mais o que enviar; do contrário, o token, quando o e-mail tem um
      */
     private Optional<Optional<String>> content(PendingAccountMail mail) {
-        if (mail.type() == AccountMailType.ACCOUNT_ALREADY_EXISTS) {
+        if (mail.type() == AccountMailType.EMAIL_CHANGE_CONFIRMATION) {
+            return users.findById(mail.userId()).filter(User::isActive)
+                    .map(candidate -> Optional.of(tokens.issueEmailChange(candidate, mail.email())));
+        }
+        if (mail.type() != AccountMailType.VERIFY_EMAIL && mail.type() != AccountMailType.RESET_PASSWORD) {
             return Optional.of(Optional.empty());
         }
         Optional<User> user = users.findByEmail(mail.email()).filter(User::isActive);

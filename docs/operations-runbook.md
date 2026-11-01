@@ -31,7 +31,9 @@ O site fica em `https://localhost:8443`, com certificado autoassinado, e os e-ma
 1. Preencha o arquivo de ambiente e aponte `TLS_CERT_DIR` para o certificado. A chave deve ser legível pelo usuário 101, o do NGINX.
 2. Se o banco for gerenciado ou estiver em outro host, rode [`roles.sql`](../infra/postgres/roles.sql) com um superusuário e defina `DB_SSL_MODE=verify-full` e `DB_SSL_ROOT_CERT`. Monte o certificado da autoridade no serviço `app` e no `migrate`.
 3. Rode `$COMPOSE up --detach --wait`.
-4. Promova a primeira conta root, como descrito no [README do backend](../backend/readowl/README.md#primeira-conta-root).
+4. Promova a primeira conta root, como descrito no [README do backend](../backend/readowl/README.md#primeira-conta-root). **Antes, entre com ela e vincule o Google**: em produção, moderação e administração só entram pelo Google.
+
+> **Contas privilegiadas devem ter a verificação em duas etapas ativa no Google.** O Readowl não consegue conferir isso, então cabe a quem administra. Se o Google ficar indisponível, ninguém com esses papéis entra. Em uma emergência, defina `PRIVILEGED_GOOGLE_LOGIN_REQUIRED=false`, reinicie, resolva e volte o valor.
 
 ### Banco já existente com um único usuário
 
@@ -149,6 +151,7 @@ A porta interna 8081 expõe `/actuator/health`, `/actuator/health/readiness`, `/
 | Notificações paradas | `readowl.outbox.delay.seconds` | Acima de 300 | Logs do `NotificationWorker` |
 | Eventos com falha | `readowl.outbox.failed` | Aumentou | `last_error` em `outbox_events` |
 | Memória | `jvm.memory.used`, `area=heap` | Acima de 85% por 10 minutos | Contagem de reinícios do contêiner |
+| Ataque de senhas | `readowl.security.events`, `event=LOGIN_FAILED` | Acima de 100 em 5 minutos | Logs, pelo hash da tentativa |
 | Backup atrasado | Data do último backup | Mais de 26 horas | Cron e saída de `backup.sh` |
 | Certificado | Validade do TLS | Menos de 14 dias | Renovação |
 
@@ -162,7 +165,7 @@ Limites atingidos no NGINX aparecem no log de acesso com status 429.
 | `nginx`, acesso | JSON, com `correlationId` | Query string, `Referer` e cookies |
 | `nginx`, erros | Texto | Em nível `error`, pode trazer a URL e o `Referer` de um pedido que falhou no proxy |
 
-Por esse último ponto, o frontend deve retirar o token da URL das páginas de confirmação e redefinição assim que as abrir.
+Os links enviados por e-mail levam o token no fragmento da URL (`#token=`), que o navegador não envia ao servidor. Por isso, ele não aparece nesses logs nem no `Referer`.
 
 ## Limites do NGINX
 

@@ -14,6 +14,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 public final class AccountFixtures {
 
     public static final String PASSWORD = "senha-forte-123";
+    public static final String TERMS_VERSION = "2026-11";
 
     private final int port;
     private final RecordingMailSender mail;
@@ -45,7 +46,8 @@ public final class AccountFixtures {
     }
 
     public static Map<String, Object> registration(String username, String email, String password) {
-        return body("name", "Pessoa Leitora", "username", username, "email", email, "password", password);
+        return body("name", "Pessoa Leitora", "username", username, "email", email, "password", password,
+                "termsVersion", TERMS_VERSION, "ageConfirmed", true);
     }
 
     public String registerUnverified(String email) {

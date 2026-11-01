@@ -17,7 +17,8 @@ BEGIN
     EXECUTE format('GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA public TO %I', app_user);
     EXECUTE format('GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA public TO %I', app_user);
     EXECUTE format('REVOKE ALL ON flyway_schema_history FROM %I', app_user);
-    -- A auditoria só recebe linhas: quem compromete a aplicação não apaga o próprio rastro.
+    -- Só recebem linhas: quem compromete a aplicação não apaga o próprio rastro. A limpeza usa funções do dono (V14).
     EXECUTE format('REVOKE UPDATE, DELETE, TRUNCATE ON audit_log FROM %I', app_user);
+    EXECUTE format('REVOKE UPDATE, DELETE, TRUNCATE ON access_records FROM %I', app_user);
 END
 $$;

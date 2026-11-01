@@ -110,13 +110,16 @@ A autenticação é por cookie de sessão `HttpOnly`, inacessível ao JavaScript
 |---|---|
 | Nome do cookie | `SESSION` em desenvolvimento; `__Host-SESSION` em produção |
 | Atributos | `HttpOnly`, `SameSite=Lax`, `Path=/`; `Secure` em produção |
-| Duração | Expira após 14 dias sem uso, e o cookie dura 14 dias a partir do login |
+| Sem "manter conectado" | Expira após 12 horas sem uso, e o cookie some ao fechar o navegador |
+| Com "manter conectado" | Expira após 14 dias sem uso |
+| Moderação e administração | Expira após 1 hora sem uso, e "manter conectado" não vale |
+| Duração máxima | 30 dias; 12 horas para moderação e administração. Vale mesmo com uso contínuo |
 
 Escritas e rotas de `/admin` e `/moderation` conferem a conta a cada requisição. Se ela foi suspensa ou mudou de papel, a sessão é encerrada e a resposta é 401 `UNAUTHENTICATED`.
 
 ### Cache
 
-As rotas públicas de leitura enviam `Cache-Control: public, max-age=30`: catálogo, obra, índice, capítulo, banners e perfil público. `GET /genres` usa 300 segundos. Conteúdo tirado do ar pode continuar em caches por esse tempo. As demais respostas, inclusive os erros, enviam `no-store`.
+Para visitantes, as rotas públicas de leitura enviam `Cache-Control: public, max-age=30` e `Vary: Cookie`. Com sessão, a resposta é `no-store`, porque pode incluir obras adultas. As rotas são: catálogo, obra, índice, capítulo, banners e perfil público. `GET /genres` usa 300 segundos. Conteúdo tirado do ar pode continuar em caches por esse tempo. As demais respostas, inclusive os erros, enviam `no-store`.
 
 ## Autenticação
 
@@ -157,19 +160,38 @@ Informa quem está autenticado. Público: é a forma de saber se há sessão, se
     "name": "Maria Leitora",
     "role": "USER",
     "hasPassword": true,
-    "googleLinked": false
+    "googleLinked": false,
+    "termsAccepted": true
   }
 }
 ```
 
+Com `termsAccepted: false`, mostre os termos e chame `POST /users/me/terms`. Até lá, escritas respondem 403 `TERMS_NOT_ACCEPTED`, salvo aceitar, cuidar da senha, do e-mail e das sessões, e excluir a conta. Acontece com quem entrou pelo Google e, para todos, quando os termos mudam.
+
 Os valores de `role` estão em [Papéis](#papéis). Use-os só para adaptar a interface: quem decide o acesso é o backend.
+
+### `GET /auth/terms`
+
+Versão vigente dos termos de uso e idade mínima. Público. O texto dos termos fica no frontend e depende de revisão jurídica.
+
+**200**
+```json
+{ "version": "2026-11", "minimumAge": 18 }
+```
 
 ### `POST /auth/register`
 
 Cria uma conta e envia o e-mail de confirmação. Público.
 
 ```json
-{ "name": "Maria Leitora", "username": "maria-leitora", "email": "maria@example.com", "password": "..." }
+{
+  "name": "Maria Leitora",
+  "username": "maria-leitora",
+  "email": "maria@example.com",
+  "password": "...",
+  "termsVersion": "2026-11",
+  "ageConfirmed": true
+}
 ```
 
 | Campo | Regra |
@@ -178,12 +200,15 @@ Cria uma conta e envia o e-mail de confirmação. Público.
 | `username` | De 3 a 30 letras, números, `_` ou `-`, começando com letra ou número. É salvo em minúsculas e não pode ser alterado depois |
 | `email` | E-mail válido, até 255 caracteres. Maiúsculas são ignoradas |
 | `password` | De 8 a 128 caracteres |
+| `termsVersion` | Obrigatório. A versão que a pessoa leu, de `GET /auth/terms` |
+| `ageConfirmed` | Obrigatório e `true`: a pessoa declara ter a idade mínima |
 
 **202**, sem corpo. **A resposta é a mesma se o e-mail já tiver conta**, para não revelar quem está cadastrado: nesse caso, o dono do e-mail recebe um aviso em vez da confirmação. Mostre uma mensagem como "Enviamos as instruções para o seu e-mail".
 
 | Status | `code` | Quando |
 |---|---|---|
 | 409 | `USERNAME_TAKEN` | Nome de usuário ocupado ou reservado |
+| 409 | `TERMS_OUTDATED` | Os termos mudaram. A resposta traz `currentVersion` |
 
 ### `POST /auth/verify-email`
 
@@ -216,8 +241,10 @@ Reenvia a confirmação e invalida o link anterior. Público.
 Inicia a sessão. Público.
 
 ```json
-{ "email": "maria@example.com", "password": "..." }
+{ "email": "maria@example.com", "password": "...", "rememberMe": true }
 ```
+
+`rememberMe` é opcional e, ausente, vale `false`. Veja [Sessão](#sessão).
 
 **200**, com o mesmo corpo de `GET /auth/session`. Emite o cookie de sessão e descarta o token CSRF.
 
@@ -228,6 +255,7 @@ No primeiro login em cada navegador, emite também o cookie `READOWL_DEVICE`, `H
 | 401 | `INVALID_CREDENTIALS` | E-mail ou senha incorretos, ou conta sem senha. Não distingue os casos |
 | 403 | `EMAIL_NOT_VERIFIED` | Senha correta, e-mail ainda não confirmado. Ofereça o reenvio |
 | 403 | `ACCOUNT_SUSPENDED` | Senha correta, conta suspensa |
+| 403 | `GOOGLE_LOGIN_REQUIRED` | Senha correta, mas em produção contas de moderação e administração só entram pelo Google |
 
 ### `POST /auth/logout`
 
@@ -350,6 +378,93 @@ Dados da própria conta. Exige sessão.
   "createdAt": "2026-10-31T19:32:15.393101Z"
 }
 ```
+
+### `POST /users/me/terms`
+
+Aceita os termos vigentes.
+
+```json
+{ "termsVersion": "2026-11", "ageConfirmed": true }
+```
+
+**204**, sem corpo. **409** `TERMS_OUTDATED` se a versão não for a vigente. **400** sem a declaração de idade.
+
+### `GET /users/me/sessions`
+
+Sessões abertas da conta, da usada mais recentemente para a mais antiga.
+
+**200**
+```json
+[{
+  "id": "7f3a...",
+  "createdAt": "2026-11-01T12:00:00Z",
+  "lastAccessedAt": "2026-11-01T13:00:00Z",
+  "userAgent": "Mozilla/5.0 ...",
+  "current": true
+}]
+```
+
+`id` serve só para encerrar a sessão: não é o valor do cookie.
+
+### `DELETE /users/me/sessions`
+
+Encerra as demais sessões e mantém a atual. **204**, sem corpo.
+
+### `DELETE /users/me/sessions/{id}`
+
+Encerra uma sessão. Encerrar a atual equivale a sair. **204**, sem corpo. **404** `SESSION_NOT_FOUND` se ela não for da conta.
+
+### `POST /users/me/email`
+
+Pede a troca de e-mail. O link vai para o endereço novo e vale por 1 hora.
+
+```json
+{ "newEmail": "novo@example.com", "password": "..." }
+```
+
+`password` é obrigatória para quem tem senha. Quem só entra pelo Google precisa ter entrado há menos de 15 minutos.
+
+**202**, sem corpo, **também se o endereço novo já tiver conta**, para não revelar quem está cadastrado.
+
+| Status | `code` | Quando |
+|---|---|---|
+| 400 | `INVALID_CURRENT_PASSWORD` | Senha incorreta ou ausente |
+| 403 | `RECENT_LOGIN_REQUIRED` | Conta sem senha, com login antigo. Peça para entrar de novo |
+
+### `POST /auth/email/confirm`
+
+Conclui a troca. Público: o link abre em `/confirmar-email#token=...`.
+
+```json
+{ "token": "..." }
+```
+
+**204**, sem corpo. **Todas as sessões são encerradas**, e o endereço antigo recebe um aviso.
+
+| Status | `code` | Quando |
+|---|---|---|
+| 400 | `INVALID_TOKEN` | Link inválido, expirado ou já usado |
+| 409 | `EMAIL_TAKEN` | Outra conta passou a usar o endereço |
+
+### `GET /users/me/export`
+
+Baixa os dados da conta em JSON, com `Content-Disposition: attachment`. Limite de 3 por dia. Inclui perfil, biblioteca, notas, reações, curtidas, comentários, notificações, denúncias feitas, registros de acesso e obras, com o rascunho e a revisão publicada de cada capítulo.
+
+### `DELETE /users/me`
+
+Exclui a conta, **sem volta**. Peça uma confirmação clara antes de chamar.
+
+```json
+{ "password": "..." }
+```
+
+Com `password` e as regras de `POST /users/me/email`. **204**, sem corpo, e a sessão termina. Obras, biblioteca, notas e reações são apagadas. Os comentários continuam, com o autor "Usuário removido" e sem `username`. O que continua guardado está em [personal-data.md](personal-data.md).
+
+| Status | `code` | Quando |
+|---|---|---|
+| 400 | `INVALID_CURRENT_PASSWORD` | Senha incorreta ou ausente |
+| 403 | `RECENT_LOGIN_REQUIRED` | Conta sem senha, com login antigo |
+| 409 | `LAST_ROOT` | É a última conta root ativa |
 
 ### `PATCH /users/me`
 
@@ -766,6 +881,8 @@ Limites por minuto, além dos quais a resposta é 429 `RATE_LIMITED`:
   "updatedAt": "2026-10-31T19:32:15.393101Z"
 }
 ```
+
+`author.username` é `null` quando a conta foi excluída: mostre `author.name`, sem link para perfil.
 
 **Trate `content` e `author` como opcionais.** Um comentário principal excluído, oculto ou de conta suspensa que ainda tem respostas continua na lista com `removed: true`, `content: null` e `author: null`, para não sumir com a conversa. Mostre algo como "Comentário removido". Sem respostas visíveis, ele não aparece.
 
@@ -1321,6 +1438,17 @@ Campos ausentes não mudam. `status` é `ACTIVE` ou `SUSPENDED`. Senha e e-mail 
 | 409 | `USERNAME_TAKEN` | Nome de usuário ocupado ou reservado |
 | 409 | `LAST_ROOT` | Removeria a última conta root ativa |
 
+### `GET /admin/access-records`
+
+Registro de acesso de uma conta: logins e escritas, com IP e horário. **Só `ROOT`**, e cada consulta fica na auditoria.
+
+`?userId=...&page=0&size=20`
+
+**200**, paginado:
+```json
+{ "id": "019f...", "userId": "019f...", "ip": "203.0.113.7", "action": "POST /api/v1/books", "createdAt": "2026-11-01T12:00:00Z" }
+```
+
 ### `GET /admin/audit-log`
 
 Das entradas mais recentes para as mais antigas, paginada. Filtros opcionais: `actorId` e `resource`, com o valor exato registrado. Nenhuma rota altera ou exclui entradas.
@@ -1401,10 +1529,14 @@ Nada disso foi alterado no projeto Angular.
 | Proxy de desenvolvimento | Encaminhar `/api`, `/oauth2` e `/login/oauth2` para `http://localhost:8080` |
 | CSRF em produção | Informar o cookie `__Host-XSRF-TOKEN` em `withXsrfConfiguration`, como na [seção CSRF](#csrf) |
 | Busca | Aguardar a pessoa parar de digitar antes de chamar `GET /books?query=`, e tratar 429 esperando o tempo de `Retry-After` |
-| Links de e-mail | Retirar o token da URL assim que abrir as páginas de confirmação e de redefinição de senha, para não ir em `Referer` e logs |
 | SSR | No servidor Node, usar URL absoluta e apenas GETs públicos: os cookies do usuário não são encaminhados. Chamar a aplicação pela rede interna, porque pelo NGINX todas as visitas contariam como um único IP |
 | Renderização | `app.routes.server.ts` usa `RenderMode.Prerender` em `**`, que não atende rotas dinâmicas previstas para SSR |
-| Rotas novas | `/login`, `/conta`, `/verificar-email`, `/redefinir-senha` e `/recuperar-senha` |
+| Rotas novas | `/login`, `/conta`, `/verificar-email`, `/confirmar-email`, `/redefinir-senha` e `/recuperar-senha` |
+| Termos e idade | Mostrar os termos no cadastro e enviar `termsVersion` e `ageConfirmed`. Tratar `termsAccepted: false` em `GET /auth/session` |
+| Manter conectado | Oferecer a opção no login, com `rememberMe` |
+| Conta | Em `/conta`: sessões abertas, troca de e-mail, exportação e exclusão |
+| Administração | Tratar 403 `RECENT_LOGIN_REQUIRED` ao trocar papel ou status, pedindo para entrar de novo |
+| Obras adultas | Oferecer `contentRating` ao criar e editar a obra. O SSR não envia cookies, então uma obra adulta responde 404 no servidor e só aparece no navegador, com sessão |
 | Imagens | Tratar obra e perfil sem capa ou avatar até a etapa de mídia |
 | Editor | Adotar o Tiptap com as extensões da [lista do formato](#formato-do-documento-versão-1). Ele ainda não está no `package.json` |
 | Leitura | Estilizar as classes `text-left`, `text-center`, `text-right` e `text-justify` |

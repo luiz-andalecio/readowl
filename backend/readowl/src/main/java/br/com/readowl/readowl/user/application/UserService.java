@@ -1,5 +1,6 @@
 package br.com.readowl.readowl.user.application;
 
+import br.com.readowl.readowl.shared.config.ReadowlProperties;
 import br.com.readowl.readowl.shared.exception.ApiException;
 import br.com.readowl.readowl.shared.text.Slugs;
 import br.com.readowl.readowl.user.domain.Role;
@@ -7,6 +8,7 @@ import br.com.readowl.readowl.user.domain.User;
 import br.com.readowl.readowl.user.domain.UserStatus;
 import br.com.readowl.readowl.user.infrastructure.UserRepository;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.Instant;
@@ -31,9 +33,66 @@ public class UserService {
     private static final int GENERATED_BASE_LENGTH = 20;
 
     private final UserRepository users;
+    private final ReadowlProperties properties;
 
-    public UserService(UserRepository users) {
+    public UserService(UserRepository users, ReadowlProperties properties) {
         this.users = users;
+        this.properties = properties;
+    }
+
+    public record CurrentTerms(String version, int minimumAge) {
+    }
+
+    public CurrentTerms currentTerms() {
+        return new CurrentTerms(properties.terms().version(), properties.terms().minimumAge());
+    }
+
+    public void requireCurrentTerms(String version) {
+        if (!properties.terms().version().equals(version)) {
+            throw ApiException.conflict("TERMS_OUTDATED", "Os termos de uso mudaram. Leia a versão atual.")
+                    .withProperty("currentVersion", properties.terms().version());
+        }
+    }
+
+    public boolean hasAcceptedCurrentTerms(UUID id) {
+        return users.existsByIdAndTermsVersion(id, properties.terms().version());
+    }
+
+    @Transactional
+    public void acceptTerms(UUID id, String version) {
+        requireCurrentTerms(version);
+        requireById(id).acceptTerms(version, Instant.now());
+    }
+
+    /**
+     * Sem root ativo, ninguém mais conseguiria administrar contas pela aplicação. O bloqueio impede que
+     * dois roots removam um ao outro ao mesmo tempo.
+     */
+    @Transactional(propagation = Propagation.MANDATORY)
+    public void requireAnotherActiveRoot(UUID id) {
+        long others = users.findLockedByRoleAndStatus(Role.ROOT, UserStatus.ACTIVE).stream()
+                .filter(root -> !root.getId().equals(id))
+                .count();
+        if (others == 0) {
+            throw ApiException.conflict("LAST_ROOT", "Esta é a última conta root ativa.");
+        }
+    }
+
+    /**
+     * A última conta root não sai: restaria uma plataforma sem administração.
+     *
+     * @return o e-mail que a conta tinha
+     */
+    @Transactional(propagation = Propagation.MANDATORY)
+    public String anonymize(UUID id, Instant at) {
+        User user = requireById(id);
+        if (user.getRole() == Role.ROOT && user.isActive()) {
+            requireAnotherActiveRoot(id);
+        }
+        String email = user.getEmail();
+        user.anonymize(at);
+        users.saveAndFlush(user);
+        return email;
     }
 
     public record PublicProfile(String username, String name, String description, Instant createdAt) {

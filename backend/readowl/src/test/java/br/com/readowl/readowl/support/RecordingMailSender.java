@@ -78,6 +78,17 @@ public class RecordingMailSender implements MailSender {
         }
     }
 
+    /**
+     * Descarta as mensagens anteriores, que chegam em ordem.
+     */
+    public SimpleMailMessage awaitSubject(String recipient, String subjectPart) {
+        SimpleMailMessage message = awaitMessage(recipient);
+        while (!Objects.requireNonNull(message.getSubject()).contains(subjectPart)) {
+            message = awaitMessage(recipient);
+        }
+        return message;
+    }
+
     public String awaitToken(String recipient) {
         Matcher matcher = TOKEN.matcher(Objects.requireNonNull(awaitMessage(recipient).getText()));
         if (!matcher.find()) {

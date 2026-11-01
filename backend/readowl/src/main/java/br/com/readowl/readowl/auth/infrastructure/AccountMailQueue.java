@@ -2,6 +2,7 @@ package br.com.readowl.readowl.auth.infrastructure;
 
 import br.com.readowl.readowl.auth.application.AccountMailType;
 import org.springframework.jdbc.core.RowMapper;
+import org.springframework.jdbc.core.namedparam.MapSqlParameterSource;
 import org.springframework.jdbc.core.namedparam.NamedParameterJdbcTemplate;
 import org.springframework.stereotype.Repository;
 
@@ -18,7 +19,8 @@ import java.util.UUID;
 public class AccountMailQueue {
 
     private static final RowMapper<PendingAccountMail> ROW = (rs, row) -> new PendingAccountMail(
-            rs.getObject("id", UUID.class), AccountMailType.valueOf(rs.getString("type")), rs.getString("email"));
+            rs.getObject("id", UUID.class), AccountMailType.valueOf(rs.getString("type")), rs.getString("email"),
+            rs.getObject("user_id", UUID.class));
 
     private final NamedParameterJdbcTemplate jdbc;
 
@@ -26,7 +28,10 @@ public class AccountMailQueue {
         this.jdbc = jdbc;
     }
 
-    public record PendingAccountMail(UUID id, AccountMailType type, String email) {
+    /**
+     * @param userId só quando o endereço ainda não identifica a conta, como numa troca de e-mail
+     */
+    public record PendingAccountMail(UUID id, AccountMailType type, String email, UUID userId) {
 
         // O endereço não vai para logs.
         @Override
@@ -35,19 +40,20 @@ public class AccountMailQueue {
         }
     }
 
-    public UUID enqueue(AccountMailType type, String email) {
+    public UUID enqueue(AccountMailType type, String email, UUID userId) {
         return jdbc.queryForObject("""
-                INSERT INTO account_mail_queue (id, type, email, created_at, next_attempt_at)
-                VALUES (uuidv7(), :type, :email, now(), now())
+                INSERT INTO account_mail_queue (id, type, email, user_id, created_at, next_attempt_at)
+                VALUES (uuidv7(), :type, :email, :userId, now(), now())
                 RETURNING id
-                """, Map.of("type", type.name(), "email", email), UUID.class);
+                """, new MapSqlParameterSource().addValue("type", type.name()).addValue("email", email)
+                .addValue("userId", userId), UUID.class);
     }
 
     public Optional<PendingAccountMail> claim(UUID id) {
         return jdbc.query("""
                 UPDATE account_mail_queue SET next_attempt_at = now() + interval '5 minutes'
                 WHERE id = :id AND failed_at IS NULL AND next_attempt_at <= now()
-                RETURNING id, type, email
+                RETURNING id, type, email, user_id
                 """, Map.of("id", id), ROW).stream().findFirst();
     }
 
@@ -60,7 +66,7 @@ public class AccountMailQueue {
                 )
                 UPDATE account_mail_queue q SET next_attempt_at = now() + interval '5 minutes'
                 FROM due WHERE q.id = due.id
-                RETURNING q.id, q.type, q.email
+                RETURNING q.id, q.type, q.email, q.user_id
                 """, Map.of("limit", limit), ROW);
     }
 

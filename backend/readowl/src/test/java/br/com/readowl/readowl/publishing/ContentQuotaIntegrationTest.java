@@ -62,7 +62,8 @@ class ContentQuotaIntegrationTest {
     }
 
     /**
-     * Repete até o limite recusar. O pedido que recusa não pode ter sido contado como sucesso.
+     * Repete até o limite recusar. O pedido que recusa não pode ter sido contado como sucesso. Nos limites por minuto,
+     * a janela é fixa e a sequência pode cruzar a virada do minuto, por isso o máximo de tentativas tem folga.
      */
     private static ApiClient.Response untilRefused(Supplier<ApiClient.Response> request, int maxAttempts) {
         ApiClient.Response last = null;
@@ -157,7 +158,7 @@ class ContentQuotaIntegrationTest {
     void savingDraftsIsLimitedPerAccount() {
         String path = "/api/v1/chapters/" + books.createChapter(author, books.createBook(author), "Capítulo") + "/draft";
 
-        assertThat(untilRefused(() -> author.put(path, body()), 121).status()).isEqualTo(429);
+        assertThat(untilRefused(() -> author.put(path, body()), 250).status()).isEqualTo(429);
     }
 
     @Test
@@ -171,7 +172,7 @@ class ContentQuotaIntegrationTest {
     void structuralChangesAreLimitedPerAccount() {
         String book = books.createBook(author);
 
-        assertThat(untilRefused(() -> author.patch("/api/v1/books/" + book, body("synopsis", "Nova sinopse")), 121).status())
+        assertThat(untilRefused(() -> author.patch("/api/v1/books/" + book, body("synopsis", "Nova sinopse")), 250).status())
                 .isEqualTo(429);
     }
 

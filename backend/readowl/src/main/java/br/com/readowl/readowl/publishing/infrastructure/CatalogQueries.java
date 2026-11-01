@@ -1,6 +1,7 @@
 package br.com.readowl.readowl.publishing.infrastructure;
 
 import br.com.readowl.readowl.book.domain.BookStatus;
+import br.com.readowl.readowl.book.domain.ContentRating;
 import br.com.readowl.readowl.genre.application.TaxonomyItem;
 import br.com.readowl.readowl.shared.text.Texts;
 import org.springframework.jdbc.core.namedparam.MapSqlParameterSource;
@@ -66,11 +67,12 @@ public class CatalogQueries {
         }
     }
 
-    public record Filter(String query, List<UUID> genreIds, List<String> tags, BookStatus status, String author) {
+    public record Filter(String query, List<UUID> genreIds, List<String> tags, BookStatus status, String author,
+                         boolean includeAdult) {
     }
 
     public record Row(UUID id, String title, String acronym, String slug, String synopsis, BookStatus status,
-                      long viewCount, String authorUsername, String authorName, int publishedChapters,
+                      ContentRating contentRating, long viewCount, String authorUsername, String authorName, int publishedChapters,
                       Instant lastChapterPublishedAt, Instant createdAt) {
     }
 
@@ -87,7 +89,7 @@ public class CatalogQueries {
                 .addValue("offset", offset);
         String order = ordering == Ordering.RELEVANCE_DESC ? "(" + RELEVANCE + ") DESC" : ordering.sql;
         String sql = """
-                SELECT b.id, b.title, b.acronym, b.slug, b.synopsis, b.status, b.view_count,
+                SELECT b.id, b.title, b.acronym, b.slug, b.synopsis, b.status, b.content_rating, b.view_count,
                        b.last_chapter_published_at, b.created_at, u.username, u.name,
                        (SELECT count(*) FROM chapters c WHERE c.book_id = b.id AND c.state = 'PUBLISHED') AS published_chapters
                 """ + FROM + conditions(filter, parameters)
@@ -128,6 +130,9 @@ public class CatalogQueries {
             parameters.addValue("query", filter.query());
             parameters.addValue("likeQuery", Texts.escapeLike(filter.query()));
         }
+        if (!filter.includeAdult()) {
+            sql.append(" AND b.content_rating = 'GENERAL'");
+        }
         if (filter.status() != null) {
             sql.append(" AND b.status = :status");
             parameters.addValue("status", filter.status().name());
@@ -153,7 +158,7 @@ public class CatalogQueries {
     private static Row row(ResultSet rs, int rowNumber) throws SQLException {
         return new Row(rs.getObject("id", UUID.class), rs.getString("title"), rs.getString("acronym"),
                 rs.getString("slug"), rs.getString("synopsis"), BookStatus.valueOf(rs.getString("status")),
-                rs.getLong("view_count"), rs.getString("username"), rs.getString("name"),
+                ContentRating.valueOf(rs.getString("content_rating")), rs.getLong("view_count"), rs.getString("username"), rs.getString("name"),
                 rs.getInt("published_chapters"), instant(rs, "last_chapter_published_at"), instant(rs, "created_at"));
     }
 

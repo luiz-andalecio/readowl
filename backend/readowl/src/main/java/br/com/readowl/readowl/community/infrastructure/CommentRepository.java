@@ -16,14 +16,15 @@ public interface CommentRepository extends JpaRepository<Comment, UUID> {
 
     /**
      * Um comentário principal aparece se estiver visível ou se ainda tiver respostas visíveis, para não
-     * sumir com a conversa. Comentários de contas suspensas não aparecem, e voltam se a conta for reativada.
+     * sumir com a conversa. Comentários de contas suspensas não aparecem, e voltam se a conta for reativada. Os de contas
+     * excluídas continuam, sem identificar o autor.
      */
     String THREAD_IS_VISIBLE = """
              and c.parent is null
-             and ((c.deletedAt is null and u.status = br.com.readowl.readowl.user.domain.UserStatus.ACTIVE)
+             and ((c.deletedAt is null and u.status <> br.com.readowl.readowl.user.domain.UserStatus.SUSPENDED)
                   or exists (select 1 from Comment r join r.user ru
                              where r.parent = c and r.deletedAt is null
-                               and ru.status = br.com.readowl.readowl.user.domain.UserStatus.ACTIVE))
+                               and ru.status <> br.com.readowl.readowl.user.domain.UserStatus.SUSPENDED))
             """;
 
     record CommentCount(UUID commentId, long total) {
@@ -43,11 +44,11 @@ public interface CommentRepository extends JpaRepository<Comment, UUID> {
     @Query(value = """
             select c from Comment c join fetch c.user u
             where c.parent.id = :parentId and c.deletedAt is null
-              and u.status = br.com.readowl.readowl.user.domain.UserStatus.ACTIVE
+              and u.status <> br.com.readowl.readowl.user.domain.UserStatus.SUSPENDED
             """, countQuery = """
             select count(c) from Comment c join c.user u
             where c.parent.id = :parentId and c.deletedAt is null
-              and u.status = br.com.readowl.readowl.user.domain.UserStatus.ACTIVE
+              and u.status <> br.com.readowl.readowl.user.domain.UserStatus.SUSPENDED
             """)
     Page<Comment> findVisibleReplies(UUID parentId, Pageable pageable);
 
@@ -55,7 +56,7 @@ public interface CommentRepository extends JpaRepository<Comment, UUID> {
             select new br.com.readowl.readowl.community.infrastructure.CommentRepository$CommentCount(c.parent.id, count(c))
             from Comment c join c.user u
             where c.parent.id in :parentIds and c.deletedAt is null
-              and u.status = br.com.readowl.readowl.user.domain.UserStatus.ACTIVE
+              and u.status <> br.com.readowl.readowl.user.domain.UserStatus.SUSPENDED
             group by c.parent.id
             """)
     List<CommentCount> countVisibleReplies(Collection<UUID> parentIds);

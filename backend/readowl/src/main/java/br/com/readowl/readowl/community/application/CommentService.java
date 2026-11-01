@@ -61,6 +61,9 @@ public class CommentService {
         this.audit = audit;
     }
 
+    /**
+     * @param username ausente quando a conta foi excluída, porque não há mais perfil para abrir
+     */
     public record CommentAuthor(String username, String name) {
     }
 
@@ -73,12 +76,12 @@ public class CommentService {
 
         static CommentResponse from(Comment comment, long replyCount, long likeCount) {
             User author = comment.getUser();
-            boolean removed = comment.isDeleted() || !author.isActive();
+            boolean removed = comment.isDeleted() || author.isSuspended();
             return new CommentResponse(comment.getId(), comment.getBook().getId(),
                     comment.getChapter() == null ? null : comment.getChapter().getId(),
                     comment.getParent() == null ? null : comment.getParent().getId(),
                     removed ? null : comment.getContent(),
-                    removed ? null : new CommentAuthor(author.getUsername(), author.getName()), removed,
+                    removed ? null : new CommentAuthor(author.isDeleted() ? null : author.getUsername(), author.getName()), removed,
                     !removed && comment.getEditedAt() != null, replyCount, removed ? 0 : likeCount,
                     comment.getCreatedAt(), comment.getUpdatedAt());
         }
@@ -248,7 +251,7 @@ public class CommentService {
     }
 
     static boolean isVisible(Comment comment) {
-        return comment.getUser().isActive() && isOnPublicContent(comment);
+        return !comment.getUser().isSuspended() && isOnPublicContent(comment);
     }
 
     private static boolean isPublicThread(Comment comment) {

@@ -1,5 +1,6 @@
 package br.com.readowl.readowl.book.api;
 
+import br.com.readowl.readowl.book.domain.ContentRating;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Pattern;
@@ -13,6 +14,7 @@ record CreateBookRequest(
         @NotBlank @Pattern(regexp = BookRules.ACRONYM, message = BookRules.ACRONYM_MESSAGE) String acronym,
         @NotBlank @Size(max = 2000) String synopsis,
         @Size(max = 50) String releaseFrequency,
+        ContentRating contentRating,
         @NotNull @Size(min = 1, max = 5) List<@NotNull UUID> genreIds,
         @Size(max = 10)
         List<@NotBlank @Size(max = 50) @Pattern(regexp = BookRules.TAG, message = BookRules.TAG_MESSAGE) String> tags) {

@@ -63,6 +63,7 @@ Preencha `DB_PASSWORD` e `READOWL_TEST_DB_PASSWORD`. O `.env` não é versionado
 | `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET` | Login com Google | Sem o ID, o login com Google fica desativado |
 | `TRUSTED_PROXIES` | Só no perfil `prod`: expressão regular com o endereço do proxy, como `172\.18\.0\.2` | Nenhum: a aplicação não sobe sem ela |
 | `MANAGEMENT_PORT` | Só no perfil `prod`: porta interna de saúde e métricas | `8081` |
+| `PRIVILEGED_GOOGLE_LOGIN_REQUIRED` | Só no perfil `prod`: moderação e administração só entram pelo Google, o que exige `GOOGLE_CLIENT_ID` | `true` |
 
 ### E-mail em desenvolvimento
 
@@ -81,6 +82,8 @@ WHERE email = 'seu-email@example.com';
 ```
 
 Faça login em seguida; se já estiver logado, entre de novo, porque a sessão guarda o papel. A partir daí, o root define os demais papéis por `PATCH /api/v1/admin/users/{id}`.
+
+**Em produção, essas contas só entram pelo Google.** Vincule o Google à conta antes de promovê-la (`POST /api/v1/auth/google/link`), ou ela ficará sem como entrar. A rota de papéis recusa quem não tem o vínculo, e o `UPDATE` acima não confere isso.
 
 ### Login com Google
 
@@ -101,7 +104,7 @@ Sem perfil, a aplicação **não inicia**: as variáveis do banco não têm valo
 | Perfil | Finalidade |
 |---|---|
 | `dev` | Desenvolvimento local: carrega `.env`, cookie de sessão sem `Secure` |
-| `prod` | Produção atrás de proxy HTTPS: cookies `__Host-SESSION` e `__Host-XSRF-TOKEN`, logs estruturados ECS, migrations à parte, Actuator em porta interna |
+| `prod` | Produção atrás de proxy HTTPS: cookies `__Host-SESSION` e `__Host-XSRF-TOKEN`, logs estruturados ECS, migrations à parte, Actuator em porta interna, Google obrigatório para moderação e administração |
 | `test` | Testes: fica em `src/test/resources` e não entra no JAR |
 
 ## Build e testes
@@ -159,6 +162,10 @@ Os testes de integração usam PostgreSQL real, de duas formas:
 | `UnstorableTextIntegrationTest` | Caractere nulo em corpos e parâmetros responde 400, sem deixar nada gravado |
 | `TrustedProxyIntegrationTest`, `UntrustedProxyIntegrationTest` | Perfil `prod`: cabeçalhos forjados, auditoria, bloqueio de conta por terceiros, portas pública e interna |
 | `DatabaseMigrationTest`, `QueueMetricsIntegrationTest` | Variáveis das migrations à parte e métricas das filas |
+| `AccountDeletionIntegrationTest` | Conta excluída sem dado pessoal em nenhuma tabela, comentários preservados, obra sob denúncia, última conta root |
+| `RetentionIntegrationTest` | Cada prazo de retenção, exceções por denúncia aberta, mínimos no banco |
+| `AccountSecurityIntegrationTest` | Sessões, prazos, login recente, avisos por e-mail, troca de e-mail, termos, registro de acesso, exportação, obras adultas |
+| `PrivilegedLoginIntegrationTest` | Moderação e administração sem entrada por senha |
 | `ContentQuotaIntegrationTest` | Cotas e limites de autoria |
 | `ModerationIndependenceIntegrationTest` | Conteúdo oculto não é excluído, e ninguém modera o próprio conteúdo |
 | `ChapterViewPurgeIntegrationTest`, `DeniedAuditIntegrationTest` | Limpeza de visualizações e limite das recusas na auditoria |
@@ -218,10 +225,11 @@ Monólito modular por domínio, em `br.com.readowl.readowl`. Cada módulo tem as
 | `library` | Obras seguidas e progresso de leitura |
 | `community` | Comentários, avaliações, reações e visualizações |
 | `notification` | Outbox, notificações e e-mails de novos capítulos |
-| `moderation` | Denúncias, ações sobre conteúdo e consulta da auditoria |
+| `moderation` | Denúncias, ações sobre conteúdo, consulta da auditoria e do registro de acesso |
+| `privacy` | Exclusão de conta, exportação e retenção de dados pessoais |
 | `banner` | Banners |
 
-As dependências seguem uma direção, sem ciclos: `publishing` e `library` conhecem `book`; `book` conhece `user` e `genre`; `community` conhece `publishing`, `book` e `user`; `notification` conhece `publishing`; `moderation` conhece `community`, `publishing`, `book` e `user`. A gravação da auditoria fica em `shared`, porque vários módulos a usam. A publicação avisa `notification` por evento, sem conhecê-la.
+As dependências seguem uma direção, sem ciclos: `publishing` e `library` conhecem `book`; `book` conhece `user` e `genre`; `community` conhece `publishing`, `book` e `user`; `notification` conhece `publishing`; `moderation` conhece `community`, `publishing`, `book` e `user`. A gravação da auditoria fica em `shared`, porque vários módulos a usam. A publicação avisa `notification` por evento, sem conhecê-la. `privacy` fica acima de todos, porque a exclusão de uma conta atravessa todos os dados.
 
 ### Persistência
 
@@ -237,7 +245,11 @@ As dependências seguem uma direção, sem ciclos: `publishing` e `library` conh
 - **Senhas:** Argon2id com 19 MiB e 2 iterações, o mínimo recomendado pela OWASP. O prefixo `{argon2id}` no hash permite trocar de algoritmo depois.
 - **Tokens de e-mail:** 256 bits aleatórios, de uso único. Só o hash SHA-256 é guardado.
 - **Limites de tentativas:** janela fixa no PostgreSQL (`RateLimiter`), compartilhada entre instâncias. E-mails e IPs são guardados como hash.
-- **E-mails:** enviados de forma assíncrona depois do commit. Se o SMTP falhar, a operação continua válida, a falha fica no log e o usuário pode pedir o reenvio. **Não há nova tentativa automática.**
+- **Sessões por conta:** a própria pessoa lista e encerra as sessões. A duração máxima usa a criação da sessão e vale mesmo com uso contínuo, e `SessionAccessFilter` a confere a cada requisição. A identificação pública é um hash, nunca o ID da sessão.
+- **Login recente:** `RecentLogin` exige ter entrado há até 15 minutos para trocar papel ou status e, em contas sem senha, para excluir a conta ou trocar o e-mail.
+- **Segundo fator:** com `readowl.privileged-google-login-required`, ligado em produção, moderação e administração só entram pelo Google. O Readowl não consegue verificar se a conta do Google tem o 2FA ativo: **isso é uma regra de operação**.
+- **Eventos de segurança:** `SecurityEvents` gera log, a métrica `readowl.security.events` e o registro de acesso, sem senha, token ou e-mail.
+- **Termos:** `readowl.terms.version` é a versão vigente. Mudá-la faz todas as contas aceitarem de novo, e `TermsInterceptor` bloqueia escritas até lá.
 
 ### Publicação
 
@@ -268,16 +280,17 @@ As dependências seguem uma direção, sem ciclos: `publishing` e `library` conh
 - **E-mails de conta:** o pedido fica em `account_mail_queue`, gravado na transação da operação. O envio tenta sair logo depois do commit, e o worker repete até 5 vezes. O token nasce na hora do envio, nunca fica na fila, e a linha é apagada depois do envio. Falhas definitivas ficam 7 dias.
 - **Envio fora de transação:** o worker reserva o e-mail adiando a próxima tentativa, envia sem transação e grava o resultado de cada um. Um SMTP lento não prende conexões, e a reserva vence sozinha se a aplicação cair.
 - **Falhas:** eventos e e-mails de capítulos têm até 3 tentativas com espera crescente. A falha fica na própria linha (`last_error`, `failed_at`, `email_last_error`, `email_status = 'FAILED'`) e não é repetida depois disso. Reprocessar exige alterar o banco.
-- **Limpeza:** eventos processados são apagados depois de 30 dias. Os que falharam ficam, e as notificações também: a retenção delas ainda não foi definida.
+- **Limpeza:** eventos processados são apagados depois de 30 dias. Os que falharam ficam, e as notificações saem depois de 1 ano.
 - **E-mails de capítulos:** só com `users.email_new_chapters`, desligado por padrão. A entrega é ao menos uma vez: se a aplicação cair entre o envio e o commit, o e-mail se repete.
 - **Moderação:** ocultar tira o conteúdo do ar e impede republicar e excluir (`moderated_at`), para preservar a prova. Moderadores não restauram o próprio conteúdo nem encerram denúncias contra si; administradores podem, e a ação fica na auditoria. Suspender contas continua exclusivo do root.
-- **Auditoria:** `AuditTrail.record` grava na mesma transação da ação, para mudanças em usuários, moderação e denúncias. `AuditInterceptor` registra as demais alterações administrativas depois da resposta, então **uma queda nesse instante pode perder a entrada**. Corpos de requisição nunca são gravados. Comentários editados ou excluídos pela administração guardam o texto na auditoria, e a leitura de rascunhos alheios e da lista de usuários também é registrada. Recusas de segurança têm limite de 60 entradas por hora para cada conta, e as seguintes não são registradas. A retenção ainda não foi definida.
+- **Auditoria:** `AuditTrail.record` grava na mesma transação da ação, para mudanças em usuários, moderação e denúncias. `AuditInterceptor` registra as demais alterações administrativas depois da resposta, então **uma queda nesse instante pode perder a entrada**. Corpos de requisição nunca são gravados. Comentários editados ou excluídos pela administração guardam o texto na auditoria, e a leitura de rascunhos alheios e da lista de usuários também é registrada. Recusas de segurança têm limite de 60 entradas por hora para cada conta, e as seguintes não são registradas. Os prazos estão em [`docs/personal-data.md`](../../docs/personal-data.md).
 
 ### Produção
 
 Imagem em [`Dockerfile`](Dockerfile), ambiente em [`infra/`](../../infra/) e procedimentos de implantação, rollback, backup e monitoramento em [`docs/operations-runbook.md`](../../docs/operations-runbook.md).
 
-- **Usuários do banco:** a aplicação usa um usuário sem poder sobre o schema, que não apaga nem altera `audit_log`. `DatabaseMigration` aplica as migrations antes, com o dono do schema, e `afterMigrate.sql` refaz as permissões a cada execução. Em `dev` e nos testes, com um único usuário, nada disso se aplica. O `DELETE` e o `UPDATE` de `audit_log` ficam proibidos no banco, então uma futura retenção precisa rodar com o usuário de migration.
+- **Usuários do banco:** a aplicação usa um usuário sem poder sobre o schema, que não apaga nem altera `audit_log`. `DatabaseMigration` aplica as migrations antes, com o dono do schema, e `afterMigrate.sql` refaz as permissões a cada execução. Em `dev` e nos testes, com um único usuário, nada disso se aplica. `audit_log` e `access_records` só recebem linhas: a limpeza usa funções do dono do schema (`purge_audit_log`, `purge_access_records`), que recusam prazos curtos.
+- **Retenção:** `RetentionTasks` roda uma vez por dia, com os prazos de `readowl.retention.*`.
 - **Actuator:** fica na porta interna, com saúde e métricas sem login. Na porta pública só existem `/readyz` e `/livez`, sem detalhes.
 - **Corpo das requisições:** a aplicação recusa JSON acima de 3 MiB ao ler, e o NGINX recusa antes de chegar a ela.
 - **Proxy:** o perfil `prod` só aceita `X-Forwarded-For` e `X-Forwarded-Proto` de conexões vindas de `TRUSTED_PROXIES`, e ignora os de qualquer outra origem. O cliente é o último endereço da lista que não é um proxy confiável, então tanto `$remote_addr` quanto `$proxy_add_x_forwarded_for` são seguros no NGINX. **Um valor errado em `TRUSTED_PROXIES` faz todos os clientes parecerem um só, o endereço do proxy, e dispara os limites por IP.**

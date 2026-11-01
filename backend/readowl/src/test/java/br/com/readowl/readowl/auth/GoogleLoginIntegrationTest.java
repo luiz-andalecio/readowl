@@ -33,7 +33,8 @@ import static br.com.readowl.readowl.support.ApiClient.body;
 import static org.assertj.core.api.Assertions.assertThat;
 
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT,
-        properties = {"GOOGLE_CLIENT_ID=" + FakeGoogle.CLIENT_ID, "GOOGLE_CLIENT_SECRET=segredo-de-teste"})
+        properties = {"GOOGLE_CLIENT_ID=" + FakeGoogle.CLIENT_ID, "GOOGLE_CLIENT_SECRET=segredo-de-teste",
+                "readowl.privileged-google-login-required=true"})
 @ActiveProfiles("test")
 @Import({TestDatabaseConfiguration.class, ApiTestConfiguration.class, GoogleLoginIntegrationTest.FakeGoogleConfiguration.class})
 class GoogleLoginIntegrationTest {
@@ -43,7 +44,7 @@ class GoogleLoginIntegrationTest {
     private static final String CALLBACK = "/login/oauth2/code/google";
     private static final String LINK = "/api/v1/auth/google/link";
     private static final String HOME = "https://readowl.test/";
-    private static final int FOURTEEN_DAYS_IN_SECONDS = 14 * 24 * 60 * 60;
+    private static final int TWELVE_HOURS_IN_SECONDS = 12 * 60 * 60;
 
     private static final FakeGoogle GOOGLE = new FakeGoogle();
 
@@ -110,7 +111,80 @@ class GoogleLoginIntegrationTest {
 
         signIn(client, person(uniqueEmail()));
 
-        assertThat(sessionTimeout(client)).isEqualTo(FOURTEEN_DAYS_IN_SECONDS);
+        assertThat(sessionTimeout(client)).isEqualTo(TWELVE_HOURS_IN_SECONDS);
+    }
+
+    private void linkGoogleTo(String email) {
+        jdbc.update("""
+                INSERT INTO accounts (id, user_id, provider, provider_account_id, created_at)
+                VALUES (uuidv7(), ?, 'google', ?, now())
+                """, accounts.userId(email), UUID.randomUUID().toString());
+    }
+
+    @Test
+    void aPrivilegedAccountEntersThroughGoogleWithAShortSessionAndOnlyPromotesWhoHasGoogle() {
+        FakeGoogle.Person person = person(uniqueEmail());
+        ApiClient root = accounts.client();
+        signIn(root, person);
+        jdbc.update("UPDATE users SET role = 'ROOT', terms_version = ? WHERE email = ?", AccountFixtures.TERMS_VERSION, person.email());
+        root = accounts.client();
+        signIn(root, person);
+        assertThat(sessionTimeout(root)).isEqualTo(3600);
+
+        String without = uniqueEmail();
+        accounts.registerVerified(without);
+        var refused = root.patch("/api/v1/admin/users/" + accounts.userId(without), body("role", "MODERATOR"));
+        assertThat(refused.status()).isEqualTo(409);
+        assertThat(refused.code()).isEqualTo("GOOGLE_REQUIRED_FOR_ROLE");
+        assertThat(jdbc.queryForObject("SELECT role FROM users WHERE email = ?", String.class, without)).isEqualTo("USER");
+
+        String with = uniqueEmail();
+        accounts.registerVerified(with);
+        linkGoogleTo(with);
+        assertThat(root.patch("/api/v1/admin/users/" + accounts.userId(with), body("role", "MODERATOR")).status()).isEqualTo(200);
+        var password = accounts.client().post("/api/v1/auth/login", body("email", with, "password", PASSWORD));
+        assertThat(password.status()).isEqualTo(403);
+        assertThat(password.code()).isEqualTo("GOOGLE_LOGIN_REQUIRED");
+    }
+
+    @Test
+    void aGoogleAccountAcceptsTheTermsBeforeWriting() {
+        ApiClient client = accounts.client();
+        signIn(client, person(uniqueEmail()));
+
+        assertThat(client.get(SESSION).json().at("/user/termsAccepted").asBoolean()).isFalse();
+        assertThat(client.patch("/api/v1/users/me", body("description", "Oi")).code()).isEqualTo("TERMS_NOT_ACCEPTED");
+
+        assertThat(client.post("/api/v1/users/me/terms", body("termsVersion", AccountFixtures.TERMS_VERSION, "ageConfirmed", true)).status()).isEqualTo(204);
+        assertThat(client.patch("/api/v1/users/me", body("description", "Oi")).status()).isEqualTo(200);
+    }
+
+    @Test
+    void anAccountWithoutPasswordConfirmsSensitiveActionsWithARecentLogin() {
+        FakeGoogle.Person person = person(uniqueEmail());
+        ApiClient client = accounts.client();
+        signIn(client, person);
+        UUID id = accounts.userId(person.email());
+        jdbc.update("UPDATE spring_session_attributes SET attribute_bytes = ? WHERE attribute_name = 'readowl.authenticatedAt' AND session_primary_id IN (SELECT primary_id FROM spring_session WHERE principal_name = ?)",
+                serialized(System.currentTimeMillis() / 1000 - 3600), id.toString());
+
+        var stale = client.delete("/api/v1/users/me", body());
+        assertThat(stale.status()).isEqualTo(403);
+        assertThat(stale.code()).isEqualTo("RECENT_LOGIN_REQUIRED");
+
+        signIn(client, person);
+        assertThat(client.delete("/api/v1/users/me", body()).status()).isEqualTo(204);
+        assertThat(jdbc.queryForObject("SELECT count(*) FROM accounts WHERE user_id = ?", Integer.class, id)).isZero();
+    }
+
+    private static byte[] serialized(long value) {
+        try (var bytes = new java.io.ByteArrayOutputStream(); var out = new java.io.ObjectOutputStream(bytes)) {
+            out.writeObject(Long.valueOf(value));
+            out.flush();
+            return bytes.toByteArray();
+        } catch (java.io.IOException ex) {
+            throw new IllegalStateException(ex);
+        }
     }
 
     @Test
@@ -122,7 +196,7 @@ class GoogleLoginIntegrationTest {
         assertThat(client.post(LINK, body("password", PASSWORD)).status()).isEqualTo(204);
         client.get(START);
 
-        assertThat(sessionTimeout(client)).isEqualTo(FOURTEEN_DAYS_IN_SECONDS);
+        assertThat(sessionTimeout(client)).isEqualTo(TWELVE_HOURS_IN_SECONDS);
     }
 
     @Test

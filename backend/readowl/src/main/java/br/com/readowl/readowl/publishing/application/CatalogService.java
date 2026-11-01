@@ -1,6 +1,8 @@
 package br.com.readowl.readowl.publishing.application;
 
+import br.com.readowl.readowl.book.application.PublicBooks;
 import br.com.readowl.readowl.book.domain.BookStatus;
+import br.com.readowl.readowl.book.domain.ContentRating;
 import br.com.readowl.readowl.genre.application.TaxonomyItem;
 import br.com.readowl.readowl.publishing.application.ReadingService.AuthorView;
 import br.com.readowl.readowl.publishing.infrastructure.CatalogQueries;
@@ -49,6 +51,7 @@ public class CatalogService {
     }
 
     public record CatalogEntry(UUID id, String title, String acronym, String slug, String synopsis, BookStatus status,
+                               ContentRating contentRating,
                                long viewCount, AuthorView author, List<TaxonomyItem> genres, List<TaxonomyItem> tags,
                                int publishedChapters, Instant lastChapterPublishedAt, Instant createdAt) {
     }
@@ -65,7 +68,7 @@ public class CatalogService {
         Ordering ordering = ordering(search.sort(), query);
         String author = Texts.blankToNull(search.author());
         Filter filter = new Filter(query, search.genreIds(), search.tags(), search.status(),
-                author == null ? null : User.normalizeUsername(author));
+                author == null ? null : User.normalizeUsername(author), PublicBooks.viewerIsLoggedIn());
 
         long total = queries.count(filter);
         List<Row> rows = queries.find(filter, ordering, search.size(), (long) search.page() * search.size());
@@ -74,7 +77,7 @@ public class CatalogService {
         Map<UUID, List<TaxonomyItem>> tags = queries.tagsOf(ids);
 
         List<CatalogEntry> content = rows.stream().map(row -> new CatalogEntry(row.id(), row.title(), row.acronym(),
-                row.slug(), row.synopsis(), row.status(), row.viewCount(),
+                row.slug(), row.synopsis(), row.status(), row.contentRating(), row.viewCount(),
                 new AuthorView(row.authorUsername(), row.authorName()),
                 genres.getOrDefault(row.id(), List.of()), tags.getOrDefault(row.id(), List.of()),
                 row.publishedChapters(), row.lastChapterPublishedAt(), row.createdAt())).toList();

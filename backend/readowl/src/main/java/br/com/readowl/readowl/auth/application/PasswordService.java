@@ -1,6 +1,7 @@
 package br.com.readowl.readowl.auth.application;
 
 import br.com.readowl.readowl.auth.infrastructure.KnownDevices;
+import br.com.readowl.readowl.shared.audit.SecurityEvents;
 import br.com.readowl.readowl.shared.exception.ApiException;
 import br.com.readowl.readowl.shared.ratelimit.RateLimitPolicy;
 import br.com.readowl.readowl.shared.ratelimit.RateLimiter;
@@ -26,10 +27,12 @@ public class PasswordService {
     private final PasswordEncoder passwordEncoder;
     private final RateLimiter rateLimiter;
     private final TransactionOperations transaction;
+    private final SecurityEvents events;
 
     PasswordService(UserService users, AccountTokens tokens, AccountMails mails, KnownDevices devices,
                     SessionManager sessions, PasswordEncoder passwordEncoder, RateLimiter rateLimiter,
-                    TransactionOperations transaction) {
+                    TransactionOperations transaction, SecurityEvents events) {
+        this.events = events;
         this.users = users;
         this.tokens = tokens;
         this.mails = mails;
@@ -66,10 +69,12 @@ public class PasswordService {
             consumed.changePasswordHash(passwordHash);
             consumed.verifyEmail(Instant.now());
             devices.forgetAll(consumed.getId());
+            mails.request(AccountMailType.PASSWORD_CHANGED, consumed.getEmail());
             return consumed;
         });
         rateLimiter.reset(RateLimitPolicy.LOGIN_ACCOUNT, user.getEmail());
         sessions.revokeAll(user.getId());
+        events.record(SecurityEvents.Event.PASSWORD_RESET, user.getId());
     }
 
     /**
@@ -91,8 +96,10 @@ public class PasswordService {
             users.changePasswordHash(user.getId(), passwordHash);
             tokens.invalidatePasswordResets(user.getId());
             devices.forgetAll(user.getId());
+            mails.request(AccountMailType.PASSWORD_CHANGED, user.getEmail());
         });
         sessions.revokeAllExceptCurrent(user.getId(), request);
         sessions.establish(principal, request, response);
+        events.record(SecurityEvents.Event.PASSWORD_CHANGED, user.getId());
     }
 }

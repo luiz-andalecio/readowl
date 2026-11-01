@@ -81,9 +81,10 @@ fi
 if [ -n "${MAILPIT_URL:-}" ]; then
     MAIL_TO="proxy-$$@example.com"
     USERNAME="proxy-$$"
+    TERMS_VERSION="$($CURL "$BASE_URL/api/v1/auth/terms" | sed -E 's/.*"version":"([^"]+)".*/\1/')"
     check 'cadastro pelo proxy' '202' "$(status -X POST -H 'Content-Type: application/json' \
         -H "X-XSRF-TOKEN: $TOKEN" -H "Cookie: __Host-XSRF-TOKEN=$TOKEN" \
-        -d "{\"name\":\"Proxy\",\"username\":\"$USERNAME\",\"email\":\"$MAIL_TO\",\"password\":\"senha-forte-123\"}" \
+        -d "{\"name\":\"Proxy\",\"username\":\"$USERNAME\",\"email\":\"$MAIL_TO\",\"password\":\"senha-forte-123\",\"termsVersion\":\"$TERMS_VERSION\",\"ageConfirmed\":true}" \
         "$BASE_URL/api/v1/auth/register")"
     # O envio acontece depois da resposta.
     sleep 3

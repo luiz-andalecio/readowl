@@ -2,6 +2,8 @@ package br.com.readowl.readowl.auth.application;
 
 import br.com.readowl.readowl.auth.infrastructure.AccountRepository;
 import br.com.readowl.readowl.auth.infrastructure.KnownDevices;
+import br.com.readowl.readowl.shared.audit.SecurityEvents;
+import br.com.readowl.readowl.shared.config.ReadowlProperties;
 import br.com.readowl.readowl.shared.exception.ApiException;
 import br.com.readowl.readowl.shared.ratelimit.RateLimitPolicy;
 import br.com.readowl.readowl.shared.ratelimit.RateLimiter;
@@ -23,9 +25,13 @@ public class LoginService {
     private final RateLimiter rateLimiter;
     private final KnownDevices devices;
     private final String decoyHash;
+    private final SecurityEvents events;
+    private final ReadowlProperties properties;
 
     LoginService(UserService users, AccountRepository accounts, PasswordEncoder passwordEncoder,
-                 RateLimiter rateLimiter, KnownDevices devices) {
+                 RateLimiter rateLimiter, KnownDevices devices, SecurityEvents events, ReadowlProperties properties) {
+        this.events = events;
+        this.properties = properties;
         this.users = users;
         this.accounts = accounts;
         this.passwordEncoder = passwordEncoder;
@@ -70,6 +76,7 @@ public class LoginService {
 
         boolean matches = passwordEncoder.matches(password, found.map(User::getPasswordHash).orElse(decoyHash));
         if (found.isEmpty() || !matches) {
+            events.recordFailure(SecurityEvents.Event.LOGIN_FAILED, account);
             throw ApiException.unauthorized("INVALID_CREDENTIALS", "E-mail ou senha incorretos.");
         }
         rateLimiter.reset(RateLimitPolicy.LOGIN_ACCOUNT_IP, accountAtIp);
@@ -82,6 +89,10 @@ public class LoginService {
         if (!user.isEmailVerified()) {
             throw ApiException.forbidden("EMAIL_NOT_VERIFIED", "Confirme seu e-mail antes de entrar.");
         }
+        if (user.hasPrivilegedRole() && properties.privilegedGoogleLoginRequired()) {
+            throw ApiException.forbidden("GOOGLE_LOGIN_REQUIRED", "Esta conta só entra pelo Google.");
+        }
+        events.record(SecurityEvents.Event.LOGIN_SUCCEEDED, user.getId());
         return new LoginResult(new SessionUser(user.getId(), user.getRole()),
                 knownDevice ? null : devices.register(user.getId()));
     }
@@ -94,7 +105,8 @@ public class LoginService {
                 .filter(User::isActive)
                 .map(user -> new SessionResponse(true, new SessionResponse.User(
                         user.getId(), user.getUsername(), user.getName(), user.getRole(), user.hasPassword(),
-                        accounts.existsByUserIdAndProvider(user.getId(), GoogleAccountService.PROVIDER))))
+                        accounts.existsByUserIdAndProvider(user.getId(), GoogleAccountService.PROVIDER),
+                        user.hasAcceptedTerms(properties.terms().version()))))
                 .orElseGet(SessionResponse::anonymous);
     }
 }

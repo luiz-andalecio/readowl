@@ -86,6 +86,8 @@ services:
       SMTP_PASSWORD: ${SMTP_PASSWORD:-}
       GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID:-}
       GOOGLE_CLIENT_SECRET: ${GOOGLE_CLIENT_SECRET:-}
+      # Em produção, moderação e administração só entram pelo Google.
+      PRIVILEGED_GOOGLE_LOGIN_REQUIRED: ${PRIVILEGED_GOOGLE_LOGIN_REQUIRED:-true}
       # Só o endereço fixo do NGINX nesta rede pode informar o IP do cliente.
       TRUSTED_PROXIES: 172\.30\.0\.10
     tmpfs: [/tmp]

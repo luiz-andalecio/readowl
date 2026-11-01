@@ -8,6 +8,8 @@ services:
     build:
       context: ../backend/readowl
     environment:
+      # Homologação não tem credenciais do Google.
+      PRIVILEGED_GOOGLE_LOGIN_REQUIRED: "false"
       # O Mailpit não tem autenticação nem TLS.
       SPRING_MAIL_PROPERTIES_MAIL_SMTP_AUTH: "false"
       SPRING_MAIL_PROPERTIES_MAIL_SMTP_STARTTLS_ENABLE: "false"

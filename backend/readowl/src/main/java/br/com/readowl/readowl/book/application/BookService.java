@@ -2,6 +2,7 @@ package br.com.readowl.readowl.book.application;
 
 import br.com.readowl.readowl.book.domain.Book;
 import br.com.readowl.readowl.book.domain.BookStatus;
+import br.com.readowl.readowl.book.domain.ContentRating;
 import br.com.readowl.readowl.book.infrastructure.BookRepository;
 import br.com.readowl.readowl.genre.application.TaxonomyService;
 import br.com.readowl.readowl.shared.api.PageResponse;
@@ -51,14 +52,15 @@ public class BookService {
     }
 
     public record NewBook(String title, String acronym, String synopsis, String releaseFrequency,
-                          List<UUID> genreIds, List<String> tagNames) {
+                          ContentRating contentRating, List<UUID> genreIds, List<String> tagNames) {
     }
 
     /**
      * Campos nulos não são alterados.
      */
     public record BookChanges(String title, String acronym, String synopsis, String releaseFrequency,
-                              BookStatus status, List<UUID> genreIds, List<String> tagNames, Long version) {
+                              BookStatus status, ContentRating contentRating, List<UUID> genreIds, List<String> tagNames,
+                              Long version) {
     }
 
     public BookDetails create(NewBook data, SessionUser principal) {
@@ -73,6 +75,9 @@ public class BookService {
             Book book = new Book(title, data.acronym(), slug, data.synopsis().trim(),
                     users.requireById(principal.id()));
             book.updateReleaseFrequency(Texts.blankToNull(data.releaseFrequency()));
+            if (data.contentRating() != null) {
+                book.changeContentRating(data.contentRating());
+            }
             book.replaceGenres(taxonomy.requireGenres(data.genreIds()));
             book.replaceTags(taxonomy.resolveTags(data.tagNames() == null ? List.of() : data.tagNames()));
             return BookDetails.from(books.saveAndFlush(book));
@@ -106,6 +111,9 @@ public class BookService {
             }
             if (changes.status() != null) {
                 book.updateStatus(changes.status());
+            }
+            if (changes.contentRating() != null) {
+                book.changeContentRating(changes.contentRating());
             }
             if (changes.genreIds() != null) {
                 book.replaceGenres(taxonomy.requireGenres(changes.genreIds()));

@@ -1,7 +1,9 @@
 package br.com.readowl.readowl.auth.api;
 
+import jakarta.validation.constraints.AssertTrue;
 import jakarta.validation.constraints.Email;
 import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Pattern;
 import jakarta.validation.constraints.Size;
 
@@ -12,7 +14,9 @@ record RegisterRequest(
                 message = "deve ter de 3 a 30 letras, números, _ ou -, começando com letra ou número")
         String username,
         @NotBlank @Email @Size(max = 255) String email,
-        @NotBlank @Size(min = 8, max = 128) String password) {
+        @NotBlank @Size(min = 8, max = 128) String password,
+        @NotBlank @Size(max = 20) String termsVersion,
+        @NotNull @AssertTrue(message = "é preciso declarar a idade mínima") Boolean ageConfirmed) {
 
     // Os corpos de requisição podem aparecer em logs de depuração do Spring MVC.
     @Override

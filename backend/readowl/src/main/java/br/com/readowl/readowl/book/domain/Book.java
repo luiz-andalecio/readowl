@@ -65,6 +65,10 @@ public class Book extends BaseEntity {
     @Column(nullable = false, length = 20)
     private PublicationState publicationState = PublicationState.DRAFT;
 
+    @Enumerated(EnumType.STRING)
+    @Column(nullable = false, length = 10)
+    private ContentRating contentRating = ContentRating.GENERAL;
+
     // Alterado apenas por UPDATE atômico: não pode ser sobrescrito por uma entidade desatualizada.
     @Column(nullable = false, updatable = false)
     private long viewCount;
@@ -96,6 +100,14 @@ public class Book extends BaseEntity {
         this.slug = slug;
         this.synopsis = synopsis;
         this.author = author;
+    }
+
+    public boolean isAdult() {
+        return contentRating == ContentRating.ADULT;
+    }
+
+    public void changeContentRating(ContentRating contentRating) {
+        this.contentRating = contentRating;
     }
 
     public static String normalizeAcronym(String acronym) {

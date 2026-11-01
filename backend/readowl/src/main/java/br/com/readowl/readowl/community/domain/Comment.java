@@ -25,6 +25,7 @@ import java.time.Instant;
 public class Comment extends BaseEntity {
 
     public static final int MAX_CONTENT_LENGTH = 5000;
+    public static final String PURGED_CONTENT = "[texto removido]";
 
     @NotBlank
     @Size(max = MAX_CONTENT_LENGTH)
@@ -53,6 +54,10 @@ public class Comment extends BaseEntity {
 
     private Instant editedAt;
 
+    // Definido só pela tarefa de retenção, em SQL, depois do prazo de um comentário excluído.
+    @Column(insertable = false, updatable = false)
+    private Instant contentPurgedAt;
+
     public Comment(String content, User user, Book book, Chapter chapter, Comment parent) {
         this.content = content;
         this.user = user;
@@ -77,6 +82,10 @@ public class Comment extends BaseEntity {
      */
     public void delete(Instant at) {
         this.deletedAt = at;
+    }
+
+    public boolean isContentPurged() {
+        return contentPurgedAt != null;
     }
 
     public boolean isModerated() {

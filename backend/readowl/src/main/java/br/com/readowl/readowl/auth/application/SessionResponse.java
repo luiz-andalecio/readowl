@@ -6,7 +6,8 @@ import java.util.UUID;
 
 public record SessionResponse(boolean authenticated, User user) {
 
-    public record User(UUID id, String username, String name, Role role, boolean hasPassword, boolean googleLinked) {
+    public record User(UUID id, String username, String name, Role role, boolean hasPassword, boolean googleLinked,
+                       boolean termsAccepted) {
     }
 
     static SessionResponse anonymous() {

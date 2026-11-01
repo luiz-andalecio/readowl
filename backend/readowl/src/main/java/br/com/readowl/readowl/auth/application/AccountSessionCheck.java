@@ -5,6 +5,7 @@ import br.com.readowl.readowl.user.application.SessionUser;
 import br.com.readowl.readowl.user.application.UserService;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
+import jakarta.servlet.http.HttpSession;
 import org.springframework.security.core.Authentication;
 import org.springframework.stereotype.Component;
 
@@ -25,6 +26,11 @@ class AccountSessionCheck implements SessionAccessCheck {
     @Override
     public boolean isCurrent(Authentication authentication) {
         return !(authentication.getPrincipal() instanceof SessionUser user) || users.hasAccess(user.id(), user.role());
+    }
+
+    @Override
+    public boolean isWithinMaxAge(Authentication authentication, HttpSession session) {
+        return !(authentication.getPrincipal() instanceof SessionUser user) || sessions.isWithinMaxAge(user, session);
     }
 
     @Override

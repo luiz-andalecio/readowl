@@ -80,6 +80,9 @@ public class CommentModeration {
         if (!comment.isModerated()) {
             throw ApiException.conflict("NOT_HIDDEN", "Este conteúdo não está oculto pela moderação.");
         }
+        if (comment.isContentPurged()) {
+            throw ApiException.conflict("COMMENT_CONTENT_PURGED", "O texto deste comentário já foi removido pelo prazo de retenção.");
+        }
         comment.restoreFromModeration();
         comments.flush();
     }
