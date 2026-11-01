@@ -124,6 +124,16 @@ class ContentQuotaIntegrationTest {
     }
 
     @Test
+    void aLargeDraftWithinTheStorageLimitIsSaved() {
+        String path = "/api/v1/chapters/" + books.createChapter(author, books.createBook(author), "Capítulo") + "/draft";
+        long version = author.get(path).json().at("/version").asLong();
+
+        ApiClient.Response saved = author.put(path, body("version", version, "document", BookFixtures.document("a".repeat(300_000))));
+
+        assertThat(saved.status()).isEqualTo(200);
+    }
+
+    @Test
     void aLargeDraftCountsAgainstTheStorageLimitAndASmallOneIsNotChecked() {
         String path = "/api/v1/chapters/" + books.createChapter(author, books.createBook(author), "Capítulo") + "/draft";
         long version = author.get(path).json().at("/version").asLong();

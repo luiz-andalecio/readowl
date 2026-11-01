@@ -126,6 +126,62 @@ class GoogleLoginIntegrationTest {
     }
 
     @Test
+    void anAccountAlreadyLinkedCannotStartAnotherLink() {
+        String email = uniqueEmail();
+        accounts.registerVerified(email);
+        ApiClient client = accounts.loggedIn(email, PASSWORD);
+        assertThat(client.post(LINK, body("password", PASSWORD)).status()).isEqualTo(204);
+        signIn(client, person(uniqueEmail()));
+
+        ApiClient.Response again = client.post(LINK, body("password", PASSWORD));
+
+        assertThat(again.status()).isEqualTo(409);
+        assertThat(again.code()).isEqualTo("GOOGLE_ALREADY_LINKED");
+    }
+
+    @Test
+    void twoLinksStartedAtTheSameTimeKeepOnlyTheFirst() {
+        String email = uniqueEmail();
+        accounts.registerVerified(email);
+        ApiClient first = accounts.loggedIn(email, PASSWORD);
+        ApiClient second = accounts.loggedIn(email, PASSWORD);
+        assertThat(first.post(LINK, body("password", PASSWORD)).status()).isEqualTo(204);
+        assertThat(second.post(LINK, body("password", PASSWORD)).status()).isEqualTo(204);
+        signIn(first, person(uniqueEmail()));
+
+        ApiClient.Response refused = signIn(second, person(uniqueEmail()));
+
+        assertThat(refused.location()).contains("/conta?error=GOOGLE_ALREADY_LINKED");
+        assertThat(second.get(SESSION).json().at("/authenticated").asBoolean()).isTrue();
+    }
+
+    @Test
+    void anAccountSuspendedDuringTheLinkLosesTheSession() {
+        String email = uniqueEmail();
+        accounts.registerVerified(email);
+        ApiClient client = accounts.loggedIn(email, PASSWORD);
+        assertThat(client.post(LINK, body("password", PASSWORD)).status()).isEqualTo(204);
+        jdbc.update("UPDATE users SET status = 'SUSPENDED' WHERE email = ?", email);
+
+        ApiClient.Response refused = signIn(client, person(uniqueEmail()));
+
+        assertThat(refused.location()).contains("/conta?error=ACCOUNT_SUSPENDED");
+        assertThat(client.get(SESSION).json().at("/authenticated").asBoolean()).isFalse();
+    }
+
+    @Test
+    void aGoogleAccountWithoutAUsableNameStillGetsAProfile() {
+        ApiClient blank = accounts.client();
+        ApiClient symbols = accounts.client();
+
+        signIn(blank, new FakeGoogle.Person(UUID.randomUUID().toString(), uniqueEmail(), true, " "));
+        signIn(symbols, new FakeGoogle.Person(UUID.randomUUID().toString(), uniqueEmail(), true, "!!"));
+
+        assertThat(blank.get(SESSION).json().at("/user/name").asString()).isEqualTo("Leitor Readowl");
+        assertThat(symbols.get(SESSION).json().at("/user/username").asString()).startsWith("leitor-");
+    }
+
+    @Test
     void startingTheLoginIsLimitedPerAddress() {
         ApiClient.Response last = null;
         for (int attempt = 0; attempt < 31; attempt++) {

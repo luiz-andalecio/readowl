@@ -210,6 +210,38 @@ class TrustedProxyIntegrationTest {
     }
 
     @Test
+    void browsersAreToldToKeepUsingHttps() {
+        ApiClient.Response viaHttps = accounts.client().withHeader("X-Forwarded-Proto", "https").get("/api/v1/books");
+
+        assertThat(viaHttps.headers().firstValue("Strict-Transport-Security")).isPresent();
+        assertThat(accounts.client().get("/api/v1/books").headers().firstValue("Strict-Transport-Security")).isEmpty();
+    }
+
+    @Test
+    void theActuatorOnlyShowsHealthAndNoDetails() {
+        ApiClient visitor = accounts.client();
+
+        ApiClient.Response health = visitor.get("/actuator/health");
+        assertThat(health.status()).isEqualTo(200);
+        assertThat(health.json().has("components")).isFalse();
+        assertThat(visitor.get("/actuator/health/readiness").status()).isEqualTo(200);
+        assertThat(visitor.get("/actuator/health/liveness").status()).isEqualTo(200);
+        for (String endpoint : List.of("metrics", "env", "beans", "configprops", "loggers", "heapdump", "mappings")) {
+            assertThat(visitor.get("/actuator/" + endpoint).status()).as(endpoint).isEqualTo(401);
+        }
+    }
+
+    @Test
+    void theSessionCookieCannotBeReadByScripts() {
+        String email = verifiedAccount();
+
+        ApiClient.Response login = accounts.client().post(LOGIN, body("email", email, "password", PASSWORD));
+
+        assertThat(login.setCookie("__Host-SESSION").orElseThrow()).contains("HttpOnly").contains("SameSite=Lax").contains("Path=/");
+        assertThat(login.setCookie("__Host-SESSION").orElseThrow()).doesNotContain("Domain=");
+    }
+
+    @Test
     void uploadsAreOffWhileNoRouteReceivesFiles() {
         assertThat(context.getBeanNamesForType(MultipartResolver.class)).isEmpty();
     }

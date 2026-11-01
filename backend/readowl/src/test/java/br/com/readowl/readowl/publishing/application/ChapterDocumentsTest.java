@@ -125,4 +125,33 @@ class ChapterDocumentsTest {
         assertThat(render(paragraph("   ")).isBlank()).isTrue();
         assertThat(render(paragraph("texto")).isBlank()).isFalse();
     }
+
+    @ParameterizedTest
+    @ValueSource(strings = {
+            "{\"type\":\"doc\",\"content\":[{\"type\":\"paragraph\",\"content\":[{\"type\":\"text\",\"text\":\"x\",\"marks\":{}}]}]}",
+            "{\"type\":\"doc\",\"content\":[{\"type\":\"paragraph\",\"content\":[{\"type\":\"text\",\"text\":\"x\",\"marks\":[{\"type\":\"link\"}]}]}]}",
+            "{\"type\":\"doc\",\"content\":[{\"type\":\"orderedList\",\"attrs\":{\"type\":\"a\"},\"content\":[{\"type\":\"listItem\",\"content\":[{\"type\":\"paragraph\"}]}]}]}",
+            "{\"type\":\"doc\",\"content\":[{\"type\":\"paragraph\",\"attrs\":[]}]}"
+    })
+    void refusesMarksAndAttributesOutsideTheList(String json) {
+        assertThatThrownBy(() -> render(json)).isInstanceOf(ApiException.class);
+    }
+
+    @Test
+    void refusesADocumentAboveTheSizeLimit() {
+        String manyEmptyParagraphs = "{\"type\":\"paragraph\"},".repeat(110_000);
+
+        assertThatThrownBy(() -> render("{\"type\":\"doc\",\"content\":[" + manyEmptyParagraphs + "{\"type\":\"paragraph\"}]}"))
+                .isInstanceOf(ApiException.class).hasMessageContaining("tamanho máximo");
+    }
+
+    @Test
+    void anOrderedListWithoutStartNumberBeginsAtOne() {
+        ChapterDocuments.Rendered rendered = render("""
+                {"type":"doc","content":[{"type":"orderedList","content":[
+                  {"type":"listItem","content":[{"type":"paragraph","content":[{"type":"text","text":"um"}]}]}]}]}
+                """);
+
+        assertThat(rendered.html()).isEqualTo("<ol><li><p>um</p></li></ol>");
+    }
 }

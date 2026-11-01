@@ -1,0 +1,15 @@
+version: 2
+updates:
+  # O Bouncy Castle é a única versão fixada no POM. As demais vêm do Spring Boot, atualizado como um todo.
+  - package-ecosystem: maven
+    directory: /backend/readowl
+    target-branch: dev
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5
+  - package-ecosystem: github-actions
+    directory: /
+    target-branch: dev
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5

@@ -104,10 +104,39 @@ Sem perfil, a aplicação **não inicia**: as variáveis do banco não têm valo
 ## Build e testes
 
 ```powershell
-.\mvnw.cmd clean verify
+.\mvnw.cmd test            # Só os testes de unidade, em segundos, sem banco
+.\mvnw.cmd clean verify    # Todos os testes, com PostgreSQL
 ```
 
 O artefato é gerado em `target/readowl-0.0.1-SNAPSHOT.jar`.
+
+### Pipeline
+
+[`.github/workflows/backend.yml`](../../.github/workflows/backend.yml) roda em Pull Requests e em `dev` e `main`, quando há mudança no backend ou no contrato:
+
+| Job | O que faz |
+|---|---|
+| Testes e JAR de produção | `mvnw verify` com PostgreSQL 18, relatório de cobertura e `scripts/smoke-test.sh` |
+| Vulnerabilidades em dependências | OSV-Scanner. Também roda toda segunda, porque vulnerabilidades novas aparecem sem mudança no código |
+| Testes com Testcontainers | Só toda segunda e sob demanda, porque sobe um contêiner por contexto do Spring |
+
+Para que um teste falhando impeça a integração, ative a proteção das branches `dev` e `main` no GitHub, exigindo os dois primeiros jobs. O workflow sozinho não bloqueia nada.
+
+### Cobertura
+
+```powershell
+.\mvnw.cmd clean verify -Pcoverage
+```
+
+O relatório fica em `target/site/jacoco/index.html`. Use-o para encontrar o que nenhum teste executa, como ramos de erro. O percentual não é uma meta e não quebra o build.
+
+### Teste do JAR de produção
+
+`scripts/smoke-test.sh` sobe o JAR com o perfil `prod` e confere a inicialização, os cookies `Secure` e os logs em ECS. **Ele apaga o schema do banco**, então só aceita um banco cujo nome termine em `_test`. No Windows, rode pelo Git Bash, informando os executáveis se não estiverem no `PATH`:
+
+```sh
+DB_USER=readowl DB_PASSWORD=... PSQL='/c/Program Files/PostgreSQL/18/bin/psql.exe' JAVA="$JAVA_HOME/bin/java" sh scripts/smoke-test.sh
+```
 
 ### Testes
 
@@ -136,6 +165,9 @@ Os testes de integração usam PostgreSQL real, de duas formas:
 | `ContentProtectionIntegrationTest` | Tags, cópia do capítulo na denúncia, slugs e versão nas edições |
 | `DatabaseTimeoutIntegrationTest` | Tempos máximos das conexões |
 | `SlugsTest`, `MailConnectionCheckTest` | Slugs e verificação do SMTP ao subir |
+| `ContractCoverageIntegrationTest` | Toda rota está no contrato, e o contrato não descreve rotas inexistentes |
+| `PersonalDataPurgeIntegrationTest` | Prazos de e-mails com falha e de navegadores conhecidos |
+| `AuthoringEdgeCasesIntegrationTest` | Edição de obras, reordenação, filtros, moderação repetida e envios simultâneos |
 | `SchemaConstraintsIntegrationTest` | Unicidade, FKs compostas, `CHECK`, cascatas e reordenação |
 | `EntityMappingIntegrationTest` | Mapeamentos JPA, carga LAZY, JSONB, lock otimista, rascunho separado do publicado |
 | `SecurityBaselineIntegrationTest` | Negação por padrão, CSRF, Actuator, formato dos erros |

@@ -1,12 +1,15 @@
 package br.com.readowl.readowl.auth;
 
 import br.com.readowl.readowl.auth.application.AccountMailType;
+import br.com.readowl.readowl.auth.application.LoginService;
 import br.com.readowl.readowl.auth.infrastructure.AccountMailQueue.PendingAccountMail;
 import br.com.readowl.readowl.shared.ratelimit.RateLimiter;
 import br.com.readowl.readowl.support.AccountFixtures;
 import br.com.readowl.readowl.support.ApiClient;
 import br.com.readowl.readowl.support.ApiIntegrationTest;
 import br.com.readowl.readowl.support.RecordingMailSender;
+import br.com.readowl.readowl.user.application.SessionUser;
+import br.com.readowl.readowl.user.domain.Role;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -46,6 +49,13 @@ class SensitiveDataIntegrationTest {
         accounts = new AccountFixtures(port, mail, jdbc);
         accounts.resetRateLimits();
         mail.setFailing(false);
+    }
+
+    @Test
+    void aLoginResultDoesNotPrintTheDeviceToken() {
+        LoginService.LoginResult result = new LoginService.LoginResult(new SessionUser(UUID.randomUUID(), Role.USER), "segredo");
+
+        assertThat(result.toString()).doesNotContain("segredo");
     }
 
     @Test
