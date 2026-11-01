@@ -2,6 +2,7 @@ package br.com.readowl.readowl.genre.api;
 
 import br.com.readowl.readowl.genre.application.TaxonomyItem;
 import br.com.readowl.readowl.genre.application.TaxonomyService;
+import br.com.readowl.readowl.shared.api.PublicCache;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
@@ -20,6 +21,7 @@ class TaxonomyController {
     }
 
     @GetMapping("/genres")
+    @PublicCache(seconds = 300)
     List<TaxonomyItem> genres() {
         return taxonomy.listGenres();
     }

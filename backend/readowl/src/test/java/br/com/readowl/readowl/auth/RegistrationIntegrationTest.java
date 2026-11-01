@@ -1,6 +1,7 @@
 package br.com.readowl.readowl.auth;
 
-import br.com.readowl.readowl.auth.application.AccountMailRequested;
+import br.com.readowl.readowl.auth.application.AccountMailType;
+import br.com.readowl.readowl.auth.application.AccountMails;
 import br.com.readowl.readowl.support.AccountFixtures;
 import br.com.readowl.readowl.support.ApiClient;
 import br.com.readowl.readowl.support.ApiIntegrationTest;
@@ -12,7 +13,6 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.system.CapturedOutput;
 import org.springframework.boot.test.system.OutputCaptureExtension;
 import org.springframework.boot.test.web.server.LocalServerPort;
-import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.mail.SimpleMailMessage;
 import org.springframework.transaction.support.TransactionOperations;
@@ -46,7 +46,7 @@ class RegistrationIntegrationTest {
     private JdbcTemplate jdbc;
 
     @Autowired
-    private ApplicationEventPublisher events;
+    private AccountMails mails;
 
     @Autowired
     private TransactionOperations transaction;
@@ -227,7 +227,7 @@ class RegistrationIntegrationTest {
         String email = uniqueEmail();
 
         transaction.executeWithoutResult(status -> {
-            events.publishEvent(new AccountMailRequested(AccountMailRequested.Type.ACCOUNT_ALREADY_EXISTS, email, null));
+            mails.request(AccountMailType.ACCOUNT_ALREADY_EXISTS, email);
             status.setRollbackOnly();
         });
 

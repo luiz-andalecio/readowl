@@ -76,6 +76,14 @@ public final class ApiClient {
         return send(withCsrf(request(path)).DELETE());
     }
 
+    public Response delete(String path, Object body) {
+        return send(withCsrf(request(path)).method("DELETE", json(body)).header("Content-Type", "application/json"));
+    }
+
+    public Response head(String path) {
+        return send(request(path).method("HEAD", HttpRequest.BodyPublishers.noBody()));
+    }
+
     public Optional<String> cookie(String name) {
         return cookies.getCookieStore().getCookies().stream()
                 .filter(cookie -> cookie.getName().equals(name))

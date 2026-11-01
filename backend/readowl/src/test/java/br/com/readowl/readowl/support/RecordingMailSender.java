@@ -3,6 +3,7 @@ package br.com.readowl.readowl.support;
 import org.springframework.mail.MailSendException;
 import org.springframework.mail.MailSender;
 import org.springframework.mail.SimpleMailMessage;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
 
 import java.time.Duration;
 import java.util.Map;
@@ -25,13 +26,19 @@ public class RecordingMailSender implements MailSender {
 
     private final Map<String, BlockingQueue<SimpleMailMessage>> inboxes = new ConcurrentHashMap<>();
     private volatile boolean failing;
+    private volatile String brokenRecipient;
+    private volatile boolean sentInsideTransaction;
 
     @Override
     public void send(SimpleMailMessage message) {
         if (failing) {
             throw new MailSendException("SMTP simulado indisponível");
         }
+        sentInsideTransaction |= TransactionSynchronizationManager.isActualTransactionActive();
         for (String recipient : Objects.requireNonNull(message.getTo())) {
+            if (recipient.equals(brokenRecipient)) {
+                throw new IllegalStateException("Falha que não é de e-mail");
+            }
             inbox(recipient).add(message);
         }
     }
@@ -45,6 +52,17 @@ public class RecordingMailSender implements MailSender {
 
     public void setFailing(boolean failing) {
         this.failing = failing;
+    }
+
+    /**
+     * Simula um erro inesperado, que não é uma falha de envio, ao atender este destinatário.
+     */
+    public void breakFor(String recipient) {
+        this.brokenRecipient = recipient;
+    }
+
+    public boolean sentInsideTransaction() {
+        return sentInsideTransaction;
     }
 
     public SimpleMailMessage awaitMessage(String recipient) {

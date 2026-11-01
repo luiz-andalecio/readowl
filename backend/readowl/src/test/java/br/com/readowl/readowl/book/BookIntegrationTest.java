@@ -269,7 +269,7 @@ class BookIntegrationTest {
     @Test
     void genresAndTagsArePublic() {
         String tag = "Busca" + UUID.randomUUID().toString().substring(0, 8);
-        newAuthor().post(BOOKS, with(books.newBook(uniqueTitle(), uniqueAcronym()), "tags", List.of(tag)));
+        books.publishedBook(newAuthor(), with(books.newBook(uniqueTitle(), uniqueAcronym()), "tags", List.of(tag)));
         ApiClient anonymous = accounts.client();
 
         assertThat(anonymous.get("/api/v1/genres").json().size()).isGreaterThanOrEqualTo(55);

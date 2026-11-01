@@ -19,10 +19,10 @@ public final class PublishingViews {
     private PublishingViews() {
     }
 
-    public record VolumeView(UUID id, String title, int displayOrder) {
+    public record VolumeView(UUID id, String title, int displayOrder, long version) {
 
         static VolumeView from(Volume volume) {
-            return new VolumeView(volume.getId(), volume.getTitle(), volume.getDisplayOrder());
+            return new VolumeView(volume.getId(), volume.getTitle(), volume.getDisplayOrder(), volume.getVersion());
         }
     }
 
@@ -30,13 +30,14 @@ public final class PublishingViews {
      * Só as rotas de gerenciamento usam esta resposta: a contagem por capítulo é restrita ao autor e à administração.
      */
     public record ChapterView(UUID id, String title, String slug, ChapterState state, boolean moderated,
-                              int displayOrder, UUID volumeId, long viewCount, Instant createdAt, Instant updatedAt) {
+                              int displayOrder, UUID volumeId, long viewCount, long version, Instant createdAt,
+                              Instant updatedAt) {
 
         static ChapterView from(Chapter chapter) {
             return new ChapterView(chapter.getId(), chapter.getTitle(), chapter.getSlug(), chapter.getState(),
                     chapter.isModerated(), chapter.getDisplayOrder(),
                     chapter.getVolume() == null ? null : chapter.getVolume().getId(),
-                    chapter.getViewCount(), chapter.getCreatedAt(), chapter.getUpdatedAt());
+                    chapter.getViewCount(), chapter.getVersion(), chapter.getCreatedAt(), chapter.getUpdatedAt());
         }
     }
 

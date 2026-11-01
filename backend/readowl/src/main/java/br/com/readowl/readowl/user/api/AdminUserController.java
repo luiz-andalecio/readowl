@@ -5,7 +5,6 @@ import br.com.readowl.readowl.shared.api.PageResponse;
 import br.com.readowl.readowl.user.application.AdminUserService;
 import br.com.readowl.readowl.user.application.SessionUser;
 import br.com.readowl.readowl.user.domain.Role;
-import br.com.readowl.readowl.user.domain.User;
 import br.com.readowl.readowl.user.domain.UserStatus;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.Pattern;
@@ -19,7 +18,6 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
-import java.time.Instant;
 import java.util.Set;
 import java.util.UUID;
 
@@ -33,16 +31,6 @@ class AdminUserController {
 
     AdminUserController(AdminUserService users) {
         this.users = users;
-    }
-
-    record AdminUserResponse(UUID id, String username, String name, String email, String description, Role role,
-                             UserStatus status, boolean emailVerified, Instant createdAt, Instant updatedAt) {
-
-        static AdminUserResponse from(User user) {
-            return new AdminUserResponse(user.getId(), user.getUsername(), user.getName(), user.getEmail(),
-                    user.getDescription(), user.getRole(), user.getStatus(), user.isEmailVerified(),
-                    user.getCreatedAt(), user.getUpdatedAt());
-        }
     }
 
     /**
@@ -59,23 +47,21 @@ class AdminUserController {
     }
 
     @GetMapping
-    PageResponse<AdminUserResponse> list(@RequestParam(defaultValue = "0") int page,
-                                         @RequestParam(defaultValue = "20") int size,
-                                         @RequestParam(defaultValue = "username") String sort) {
-        PageResponse<User> result = users.list(PageRequests.of(page, size, sort, SORTS));
-        return new PageResponse<>(result.content().stream().map(AdminUserResponse::from).toList(),
-                result.page(), result.size(), result.totalElements(), result.totalPages());
+    PageResponse<AdminUserService.AdminUserView> list(@RequestParam(defaultValue = "0") int page,
+                                                      @RequestParam(defaultValue = "20") int size,
+                                                      @RequestParam(defaultValue = "username") String sort) {
+        return users.list(PageRequests.of(page, size, sort, SORTS));
     }
 
     @GetMapping("/{id}")
-    AdminUserResponse get(@PathVariable UUID id) {
-        return AdminUserResponse.from(users.get(id));
+    AdminUserService.AdminUserView get(@PathVariable UUID id) {
+        return users.get(id);
     }
 
     @PatchMapping("/{id}")
-    AdminUserResponse update(@AuthenticationPrincipal SessionUser actor, @PathVariable UUID id,
-                             @Valid @RequestBody UpdateUserRequest body) {
-        return AdminUserResponse.from(users.update(id, new AdminUserService.UserChanges(
-                body.name(), body.username(), body.description(), body.role(), body.status()), actor));
+    AdminUserService.AdminUserView update(@AuthenticationPrincipal SessionUser actor, @PathVariable UUID id,
+                                          @Valid @RequestBody UpdateUserRequest body) {
+        return users.update(id, new AdminUserService.UserChanges(
+                body.name(), body.username(), body.description(), body.role(), body.status()), actor);
     }
 }

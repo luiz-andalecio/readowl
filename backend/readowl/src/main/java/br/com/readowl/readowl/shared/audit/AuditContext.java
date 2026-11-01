@@ -11,6 +11,7 @@ public final class AuditContext {
 
     private static final String OVERRIDE = AuditContext.class.getName() + ".override";
     private static final String RECORDED = AuditContext.class.getName() + ".recorded";
+    private static final String SENSITIVE_READ = AuditContext.class.getName() + ".sensitiveRead";
 
     private AuditContext() {
     }
@@ -20,6 +21,17 @@ public final class AuditContext {
      */
     public static void markOverride() {
         set(OVERRIDE);
+    }
+
+    /**
+     * A leitura expõe conteúdo privado ou dados pessoais de outras pessoas, então também fica registrada.
+     */
+    public static void markSensitiveRead() {
+        set(SENSITIVE_READ);
+    }
+
+    static boolean isSensitiveRead() {
+        return isSet(SENSITIVE_READ);
     }
 
     static void markRecorded() {

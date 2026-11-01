@@ -15,14 +15,26 @@ public final class PageRequests {
     private PageRequests() {
     }
 
-    /**
-     * @param sort campo da lista permitida; com "-" na frente, em ordem decrescente
-     */
-    public static Pageable of(int page, int size, String sort, Set<String> allowedSorts) {
+    public static void requireValid(int page, int size) {
         if (page < 0 || size < 1 || size > MAX_SIZE) {
             throw ApiException.badRequest("INVALID_PAGINATION",
                     "Use page a partir de 0 e size de 1 a " + MAX_SIZE + ".");
         }
+    }
+
+    /**
+     * Para consultas que já definem a própria ordem.
+     */
+    public static Pageable unsorted(int page, int size) {
+        requireValid(page, size);
+        return PageRequest.of(page, size);
+    }
+
+    /**
+     * @param sort campo da lista permitida; com "-" na frente, em ordem decrescente
+     */
+    public static Pageable of(int page, int size, String sort, Set<String> allowedSorts) {
+        requireValid(page, size);
         boolean descending = sort.startsWith(DESCENDING_PREFIX);
         String field = descending ? sort.substring(DESCENDING_PREFIX.length()) : sort;
         if (!allowedSorts.contains(field)) {

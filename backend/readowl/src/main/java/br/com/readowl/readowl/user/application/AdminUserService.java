@@ -1,6 +1,7 @@
 package br.com.readowl.readowl.user.application;
 
 import br.com.readowl.readowl.shared.api.PageResponse;
+import br.com.readowl.readowl.shared.audit.AuditContext;
 import br.com.readowl.readowl.shared.audit.AuditTrail;
 import br.com.readowl.readowl.shared.exception.ApiException;
 import br.com.readowl.readowl.user.domain.Role;
@@ -12,6 +13,7 @@ import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.time.Instant;
 import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.UUID;
@@ -42,17 +44,32 @@ public class AdminUserService {
     public record UserChanges(String name, String username, String description, Role role, UserStatus status) {
     }
 
+    public record AdminUserView(UUID id, String username, String name, String email, String description, Role role,
+                                UserStatus status, boolean emailVerified, Instant createdAt, Instant updatedAt) {
+
+        static AdminUserView from(User user) {
+            return new AdminUserView(user.getId(), user.getUsername(), user.getName(), user.getEmail(),
+                    user.getDescription(), user.getRole(), user.getStatus(), user.isEmailVerified(),
+                    user.getCreatedAt(), user.getUpdatedAt());
+        }
+    }
+
+    /**
+     * Mostra e-mails de outras pessoas, então a leitura fica na auditoria.
+     */
     @Transactional(readOnly = true)
-    public PageResponse<User> list(Pageable pageable) {
-        return PageResponse.from(users.findAll(pageable));
+    public PageResponse<AdminUserView> list(Pageable pageable) {
+        AuditContext.markSensitiveRead();
+        return PageResponse.from(users.findAll(pageable).map(AdminUserView::from));
     }
 
     @Transactional(readOnly = true)
-    public User get(UUID id) {
-        return userService.requireById(id);
+    public AdminUserView get(UUID id) {
+        AuditContext.markSensitiveRead();
+        return AdminUserView.from(userService.requireById(id));
     }
 
-    public User update(UUID id, UserChanges changes, SessionUser actor) {
+    public AdminUserView update(UUID id, UserChanges changes, SessionUser actor) {
         User user = userService.requireById(id);
         Map<String, Object> audited = auditedChanges(user, changes);
         boolean loses = (changes.role() != null && changes.role() != Role.ROOT)
@@ -81,7 +98,7 @@ public class AdminUserService {
         if (accessChanged) {
             events.publishEvent(new UserAccessChanged(id));
         }
-        return saved;
+        return AdminUserView.from(saved);
     }
 
     /**

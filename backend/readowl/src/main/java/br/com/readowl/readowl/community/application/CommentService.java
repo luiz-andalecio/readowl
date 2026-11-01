@@ -10,6 +10,7 @@ import br.com.readowl.readowl.publishing.application.PublicChapters;
 import br.com.readowl.readowl.publishing.domain.Chapter;
 import br.com.readowl.readowl.shared.api.PageResponse;
 import br.com.readowl.readowl.shared.audit.AuditContext;
+import br.com.readowl.readowl.shared.audit.AuditTrail;
 import br.com.readowl.readowl.shared.exception.ApiException;
 import br.com.readowl.readowl.shared.ratelimit.RateLimitPolicy;
 import br.com.readowl.readowl.shared.ratelimit.RateLimiter;
@@ -45,10 +46,11 @@ public class CommentService {
     private final UserService users;
     private final RateLimiter rateLimiter;
     private final TransactionOperations transaction;
+    private final AuditTrail audit;
 
     CommentService(CommentRepository comments, CommentLikeRepository likes, PublicBooks publicBooks,
                    PublicChapters publicChapters, UserService users, RateLimiter rateLimiter,
-                   TransactionOperations transaction) {
+                   TransactionOperations transaction, AuditTrail audit) {
         this.comments = comments;
         this.likes = likes;
         this.publicBooks = publicBooks;
@@ -56,6 +58,7 @@ public class CommentService {
         this.users = users;
         this.rateLimiter = rateLimiter;
         this.transaction = transaction;
+        this.audit = audit;
     }
 
     public record CommentAuthor(String username, String name) {
@@ -145,6 +148,10 @@ public class CommentService {
                 requireVisible(comment);
                 requireOwner(comment, principal);
             }
+            if (!isOwner(comment, principal) && !text.equals(comment.getContent())) {
+                audit.record(principal.id(), "COMMENT_EDITED", "comments/" + commentId,
+                        Map.of("before", comment.getContent(), "after", text));
+            }
             comment.edit(text, Instant.now());
             List<UUID> ids = List.of(comments.saveAndFlush(comment).getId());
             return CommentResponse.from(comment, replyCounts(ids).getOrDefault(comment.getId(), 0L),
@@ -161,6 +168,9 @@ public class CommentService {
             if (!isOwner(comment, principal) && !canOverride(comment, principal)) {
                 requireVisible(comment);
                 requireOwner(comment, principal);
+            }
+            if (!isOwner(comment, principal)) {
+                audit.record(principal.id(), "COMMENT_DELETED", "comments/" + commentId, Map.of("content", comment.getContent()));
             }
             comment.delete(Instant.now());
         });

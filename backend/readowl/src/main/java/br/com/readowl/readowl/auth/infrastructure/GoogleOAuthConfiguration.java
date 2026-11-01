@@ -3,8 +3,10 @@ package br.com.readowl.readowl.auth.infrastructure;
 import br.com.readowl.readowl.auth.application.GoogleAccountService;
 import br.com.readowl.readowl.auth.application.SessionManager;
 import br.com.readowl.readowl.shared.config.ReadowlProperties;
+import br.com.readowl.readowl.shared.ratelimit.RateLimiter;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnExpression;
+import org.springframework.boot.web.servlet.FilterRegistrationBean;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.http.client.SimpleClientHttpRequestFactory;
@@ -62,6 +64,7 @@ class GoogleOAuthConfiguration {
     private static final Duration CONNECT_TIMEOUT = Duration.ofSeconds(5);
     private static final Duration READ_TIMEOUT = Duration.ofSeconds(10);
     private static final Duration PENDING_LOGIN_VALIDITY = Duration.ofMinutes(10);
+    private static final int BEFORE_SECURITY_FILTERS = -200;
 
     @Bean
     ClientRegistrationRepository clientRegistrationRepository(@Value("${GOOGLE_CLIENT_ID}") String clientId,
@@ -73,6 +76,19 @@ class GoogleOAuthConfiguration {
                 .clientSecret(clientSecret)
                 .redirectUri(properties.pageUrl("/login/oauth2/code/" + REGISTRATION_ID))
                 .build());
+    }
+
+    /**
+     * Antes da cadeia de segurança, onde o pedido ao Google criaria a sessão.
+     */
+    @Bean
+    FilterRegistrationBean<GoogleLoginRateLimitFilter> googleLoginRateLimit(RateLimiter rateLimiter,
+                                                                            ReadowlProperties properties) {
+        FilterRegistrationBean<GoogleLoginRateLimitFilter> registration =
+                new FilterRegistrationBean<>(new GoogleLoginRateLimitFilter(rateLimiter, properties));
+        registration.addUrlPatterns("/oauth2/authorization/*");
+        registration.setOrder(BEFORE_SECURITY_FILTERS);
+        return registration;
     }
 
     @Bean

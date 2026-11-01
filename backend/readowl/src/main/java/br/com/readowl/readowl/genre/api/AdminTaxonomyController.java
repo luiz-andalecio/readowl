@@ -12,6 +12,7 @@ import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestController;
 
@@ -57,8 +58,8 @@ class AdminTaxonomyController {
 
     @DeleteMapping("/tags/{id}")
     @ResponseStatus(HttpStatus.NO_CONTENT)
-    void deleteTag(@PathVariable UUID id) {
-        taxonomy.deleteTag(id);
+    void deleteTag(@PathVariable UUID id, @RequestParam(defaultValue = "false") boolean detach) {
+        taxonomy.deleteTag(id, detach);
     }
 
     record GenreRequest(@NotBlank @Size(max = 100) String name) {

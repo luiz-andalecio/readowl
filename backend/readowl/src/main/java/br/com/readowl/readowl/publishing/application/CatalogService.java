@@ -7,8 +7,10 @@ import br.com.readowl.readowl.publishing.infrastructure.CatalogQueries;
 import br.com.readowl.readowl.publishing.infrastructure.CatalogQueries.Filter;
 import br.com.readowl.readowl.publishing.infrastructure.CatalogQueries.Ordering;
 import br.com.readowl.readowl.publishing.infrastructure.CatalogQueries.Row;
+import br.com.readowl.readowl.shared.api.PageRequests;
 import br.com.readowl.readowl.shared.api.PageResponse;
 import br.com.readowl.readowl.shared.exception.ApiException;
+import br.com.readowl.readowl.shared.text.Texts;
 import br.com.readowl.readowl.user.domain.User;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -23,7 +25,6 @@ import java.util.UUID;
 public class CatalogService {
 
     private static final int MAX_QUERY_LENGTH = 100;
-    private static final int MAX_SIZE = 50;
     private static final int MAX_FILTER_VALUES = 10;
     private static final String RELEVANCE = "relevance";
     private static final Map<String, Ordering> ORDERINGS = Map.of(
@@ -53,10 +54,8 @@ public class CatalogService {
     }
 
     public PageResponse<CatalogEntry> search(CatalogSearch search) {
-        if (search.page() < 0 || search.size() < 1 || search.size() > MAX_SIZE) {
-            throw ApiException.badRequest("INVALID_PAGINATION", "Use page a partir de 0 e size de 1 a " + MAX_SIZE + ".");
-        }
-        String query = blankToNull(search.query());
+        PageRequests.requireValid(search.page(), search.size());
+        String query = Texts.blankToNull(search.query());
         if (query != null && query.length() > MAX_QUERY_LENGTH) {
             throw ApiException.badRequest("QUERY_TOO_LONG", "A busca aceita até " + MAX_QUERY_LENGTH + " caracteres.");
         }
@@ -64,7 +63,7 @@ public class CatalogService {
             throw ApiException.badRequest("TOO_MANY_FILTERS", "Use até " + MAX_FILTER_VALUES + " gêneros e tags.");
         }
         Ordering ordering = ordering(search.sort(), query);
-        String author = blankToNull(search.author());
+        String author = Texts.blankToNull(search.author());
         Filter filter = new Filter(query, search.genreIds(), search.tags(), search.status(),
                 author == null ? null : User.normalizeUsername(author));
 
@@ -96,9 +95,5 @@ public class CatalogService {
                     "Ordenação não permitida: use title, createdAt, lastChapterAt, views ou, em buscas, relevance.");
         }
         return ordering;
-    }
-
-    private static String blankToNull(String text) {
-        return text == null || text.isBlank() ? null : text.trim();
     }
 }

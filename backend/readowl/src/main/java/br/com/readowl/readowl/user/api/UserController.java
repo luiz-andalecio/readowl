@@ -1,5 +1,6 @@
 package br.com.readowl.readowl.user.api;
 
+import br.com.readowl.readowl.shared.api.PublicCache;
 import br.com.readowl.readowl.user.application.SessionUser;
 import br.com.readowl.readowl.user.application.UserService;
 import jakarta.validation.Valid;
@@ -22,19 +23,19 @@ class UserController {
     }
 
     @GetMapping("/{username}")
-    PublicProfileResponse publicProfile(@PathVariable String username) {
-        return PublicProfileResponse.from(users.requirePublicProfile(username));
+    @PublicCache
+    UserService.PublicProfile publicProfile(@PathVariable String username) {
+        return users.publicProfile(username);
     }
 
     @GetMapping("/me")
-    MyProfileResponse me(@AuthenticationPrincipal SessionUser principal) {
-        return MyProfileResponse.from(users.requireById(principal.id()));
+    UserService.MyProfile me(@AuthenticationPrincipal SessionUser principal) {
+        return users.myProfile(principal.id());
     }
 
     @PatchMapping("/me")
-    MyProfileResponse updateMe(@AuthenticationPrincipal SessionUser principal,
-                               @Valid @RequestBody UpdateProfileRequest body) {
-        return MyProfileResponse.from(users.updateProfile(principal.id(), body.name(), body.description(),
-                body.emailNewChapters()));
+    UserService.MyProfile updateMe(@AuthenticationPrincipal SessionUser principal,
+                                   @Valid @RequestBody UpdateProfileRequest body) {
+        return users.updateProfile(principal.id(), body.name(), body.description(), body.emailNewChapters());
     }
 }

@@ -30,6 +30,7 @@ class GlobalExceptionHandlerIntegrationTest {
             "optimistic-lock, 409, CONCURRENT_MODIFICATION",
             "data-integrity,  409, DATA_CONFLICT",
             "access-denied,   403, ACCESS_DENIED",
+            "temporary,       503, TEMPORARILY_UNAVAILABLE",
             "unexpected,      500, INTERNAL_ERROR"
     })
     void mapsFailuresToStableProblemWithoutLeakingInternals(String scenario, int status, String code) throws Exception {

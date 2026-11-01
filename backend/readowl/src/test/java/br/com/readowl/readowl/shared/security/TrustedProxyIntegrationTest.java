@@ -127,6 +127,62 @@ class TrustedProxyIntegrationTest {
     }
 
     @Test
+    void aBrowserThatAlreadyLoggedInStillGetsInDuringADistributedAttack() {
+        String email = verifiedAccount();
+        ApiClient owner = from("198.51.100.7");
+        ApiClient.Response first = owner.post(LOGIN, body("email", email, "password", PASSWORD));
+        assertThat(first.status()).isEqualTo(200);
+        assertThat(first.setCookie("READOWL_DEVICE").orElseThrow())
+                .contains("HttpOnly").contains("SameSite=Strict").contains("Path=/api/v1/auth/login");
+        for (int address = 1; address <= 10; address++) {
+            for (int attempt = 0; attempt < 10; attempt++) {
+                from("203.0.113." + address).post(LOGIN, body("email", email, "password", WRONG));
+            }
+        }
+
+        assertThat(from("203.0.113.11").post(LOGIN, body("email", email, "password", PASSWORD)).status()).isEqualTo(429);
+
+        ApiClient.Response again = owner.post(LOGIN, body("email", email, "password", PASSWORD));
+        assertThat(again.status()).isEqualTo(200);
+        assertThat(again.setCookie("READOWL_DEVICE")).as("o navegador já era conhecido").isEmpty();
+    }
+
+    @Test
+    void anotherAccountsDeviceCookieDoesNotHelp() {
+        String attacker = verifiedAccount();
+        String victim = verifiedAccount();
+        ApiClient client = from("203.0.113.50");
+        assertThat(client.post(LOGIN, body("email", attacker, "password", PASSWORD)).status()).isEqualTo(200);
+        for (int address = 1; address <= 10; address++) {
+            for (int attempt = 0; attempt < 10; attempt++) {
+                from("203.0.113." + address).post(LOGIN, body("email", victim, "password", WRONG));
+            }
+        }
+
+        assertThat(client.post(LOGIN, body("email", victim, "password", WRONG)).status()).isEqualTo(429);
+    }
+
+    @Test
+    void recoveringThePasswordEndsTheBlockAndForgetsKnownBrowsers() {
+        String email = verifiedAccount();
+        ApiClient owner = from("198.51.100.7");
+        assertThat(owner.post(LOGIN, body("email", email, "password", PASSWORD)).status()).isEqualTo(200);
+        for (int address = 1; address <= 10; address++) {
+            for (int attempt = 0; attempt < 10; attempt++) {
+                from("203.0.113." + address).post(LOGIN, body("email", email, "password", WRONG));
+            }
+        }
+        assertThat(from("198.51.100.8").post(FORGOT, body("email", email)).status()).isEqualTo(202);
+
+        assertThat(from("198.51.100.8").post("/api/v1/auth/password/reset",
+                body("token", mail.awaitToken(email), "newPassword", "outra-senha-forte")).status()).isEqualTo(204);
+
+        assertThat(jdbc.queryForObject("SELECT count(*) FROM known_devices kd JOIN users u ON u.id = kd.user_id WHERE u.email = ?",
+                Integer.class, email)).isZero();
+        assertThat(from("198.51.100.9").post(LOGIN, body("email", email, "password", "outra-senha-forte")).status()).isEqualTo(200);
+    }
+
+    @Test
     void recoveryRequestsFromOneAddressDoNotBlockTheOwner() {
         String email = verifiedAccount();
         for (int attempt = 0; attempt < 3; attempt++) {

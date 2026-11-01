@@ -5,8 +5,8 @@ import br.com.readowl.readowl.genre.domain.Tag;
 import br.com.readowl.readowl.genre.infrastructure.GenreRepository;
 import br.com.readowl.readowl.genre.infrastructure.TagRepository;
 import br.com.readowl.readowl.shared.exception.ApiException;
+import br.com.readowl.readowl.shared.text.Texts;
 import org.springframework.dao.DataIntegrityViolationException;
-import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Sort;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -39,8 +39,8 @@ public class TaxonomyService {
     }
 
     public List<TaxonomyItem> searchTags(String query) {
-        String prefix = escapeLike(normalize(query).toLowerCase(Locale.ROOT)) + "%";
-        return tags.searchByPrefix(prefix, PageRequest.of(0, TAG_SUGGESTIONS)).stream().map(TaxonomyItem::from).toList();
+        String prefix = Texts.escapeLike(normalize(query).toLowerCase(Locale.ROOT)) + "%";
+        return tags.suggest(prefix, TAG_SUGGESTIONS).stream().map(TaxonomyItem::from).toList();
     }
 
     public Set<Genre> requireGenres(Collection<UUID> ids) {
@@ -121,8 +121,11 @@ public class TaxonomyService {
     }
 
     @Transactional
-    public void deleteTag(UUID id) {
+    public void deleteTag(UUID id, boolean detach) {
         Tag tag = tags.findById(id).orElseThrow(() -> ApiException.notFound("TAG_NOT_FOUND", "Tag não encontrada."));
+        if (detach) {
+            tags.removeFromBooks(id);
+        }
         try {
             tags.delete(tag);
             tags.flush();
@@ -137,9 +140,5 @@ public class TaxonomyService {
 
     private static String normalize(String name) {
         return name.trim().replaceAll("\\s+", " ");
-    }
-
-    private static String escapeLike(String text) {
-        return text.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_");
     }
 }

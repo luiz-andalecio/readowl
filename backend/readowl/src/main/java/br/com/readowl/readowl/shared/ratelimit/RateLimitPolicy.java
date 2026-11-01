@@ -34,7 +34,8 @@ public enum RateLimitPolicy {
     AUTHORING_ACCOUNT(120, Duration.ofMinutes(1)),
     DRAFT_SAVE_ACCOUNT(120, Duration.ofMinutes(1)),
     PUBLICATION_ACCOUNT(120, Duration.ofHours(1)),
-    AUDIT_DENIED_ACCOUNT(60, Duration.ofHours(1));
+    AUDIT_DENIED_ACCOUNT(60, Duration.ofHours(1)),
+    OAUTH_START_IP(30, Duration.ofMinutes(15));
 
     private final int limit;
     private final Duration window;

@@ -124,7 +124,7 @@ The supplied `pom.xml` establishes the following configuration:
 | Compiler plugin | `maven-compiler-plugin` |
 | Annotation processor | Lombok for main and test compilation |
 
-`0.0.1-SNAPSHOT` identifies the application as a development version; the Spring Boot parent remains a stable release. The POM currently leaves name, description, URL, license, developer, and SCM metadata empty. These fields will be completed when their values are established. Package layout and YAML configuration are project conventions, not settings verified by this POM.
+`0.0.1-SNAPSHOT` identifies the application as a development version; the Spring Boot parent remains a stable release. The POM currently leaves URL, license, developer, and SCM metadata empty, which also keeps them from being inherited from the Spring Boot parent. Package layout and YAML configuration are project conventions, not settings verified by this POM.
 
 ### Dependencies Included in the POM
 
@@ -148,17 +148,9 @@ Unless stated otherwise, Spring Boot artifacts below use the `org.springframewor
 
 The POM also includes these test-scoped dependencies:
 
-- `spring-boot-starter-actuator-test`
-- `spring-boot-starter-data-jpa-test`
-- `spring-boot-starter-flyway-test`
-- `spring-boot-starter-mail-test`
-- `spring-boot-starter-security-oauth2-client-test`
 - `spring-boot-starter-security-test`
-- `spring-boot-starter-session-jdbc-test`
-- `spring-boot-starter-validation-test`
 - `spring-boot-starter-webmvc-test`
 - `spring-boot-testcontainers`
-- `org.testcontainers:testcontainers-junit-jupiter`
 - `org.testcontainers:testcontainers-postgresql`
 
 Dependency declarations provide tooling support; they do not mean the corresponding features or tests have been implemented. S3 integration is not declared in the POM and remains an implementation task. Bouncy Castle (`bcprov-jdk18on`) provides the Argon2id implementation and is the one dependency whose version is pinned in the POM, because the Spring Boot BOM does not manage it.
@@ -208,7 +200,7 @@ Redis is not part of the current stack and is not required at runtime. It may be
 - Component tests using tools compatible with the selected Angular version.
 - Playwright for end-to-end tests.
 - API contract maintained in Markdown ([docs/backend-api-contract.md](docs/backend-api-contract.md)).
-- ESLint and Prettier for the frontend; Java formatting standards enforced during the build.
+- ESLint and Prettier for the frontend. A Java formatter is not configured yet.
 
 ### Version Policy
 
@@ -227,8 +219,8 @@ The backend will be a **modular monolith**, organized by feature. The frontend a
 | `user` | Users, roles, and public profiles |
 | `auth` | Registration, authentication, sessions, and recovery |
 | `genre` | Genres and tags |
-| `book` | Books and discovery |
-| `publishing` | Volumes, chapters, drafts, and revisions |
+| `book` | Books |
+| `publishing` | Volumes, chapters, drafts, revisions, reading, and the catalog, which counts published chapters |
 | `library` | Followed works and reading progress |
 | `community` | Comments, ratings, reactions, and chapter views |
 | `banner` | Home page banners |

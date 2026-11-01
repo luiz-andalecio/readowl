@@ -169,8 +169,8 @@ class AuditLogIntegrationTest {
         assertThat(log.json().at("/totalElements").asLong()).isEqualTo(4);
         assertThat(log.body())
                 .contains("PATCH /api/v1/books/{id}", "PATCH /api/v1/chapters/{chapterId}",
-                        "PATCH /api/v1/comments/{commentId}", "DELETE /api/v1/comments/{commentId}")
-                .doesNotContain("Texto privado", "Moderado");
+                        "COMMENT_EDITED", "COMMENT_DELETED")
+                .doesNotContain("Texto privado");
     }
 
     @Test
@@ -181,7 +181,6 @@ class AuditLogIntegrationTest {
         admin.patch("/api/v1/books/" + own, body("synopsis", "Minha sinopse"));
         String comment = admin.post("/api/v1/books/" + own + "/comments", body("content", "Meu comentário")).json().at("/id").asString();
         admin.patch("/api/v1/comments/" + comment, body("content", "Corrigido"));
-        admin.get("/api/v1/admin/users");
         admin.get(AUDIT);
         ApiClient user = newUser();
         String userBook = books.publishedBook(user);

@@ -52,7 +52,10 @@ class PublishingController {
         this.publication = publication;
     }
 
-    record TitleRequest(@NotBlank @Size(max = 200) String title) {
+    /**
+     * Com {@code version}, a versão lida, a alteração é recusada se outra pessoa tiver mudado o item depois disso.
+     */
+    record TitleRequest(@NotBlank @Size(max = 200) String title, Long version) {
     }
 
     record NewChapterRequest(@NotBlank @Size(max = 200) String title, UUID volumeId) {
@@ -106,7 +109,7 @@ class PublishingController {
     @RateLimited(RateLimitPolicy.AUTHORING_ACCOUNT)
     VolumeView renameVolume(@AuthenticationPrincipal SessionUser principal, @PathVariable UUID volumeId,
                             @Valid @RequestBody TitleRequest body) {
-        return structure.renameVolume(volumeId, body.title(), principal);
+        return structure.renameVolume(volumeId, body.title(), body.version(), principal);
     }
 
     @DeleteMapping("/volumes/{volumeId}")
@@ -135,7 +138,7 @@ class PublishingController {
     @RateLimited(RateLimitPolicy.AUTHORING_ACCOUNT)
     ChapterView renameChapter(@AuthenticationPrincipal SessionUser principal, @PathVariable UUID chapterId,
                               @Valid @RequestBody TitleRequest body) {
-        return structure.renameChapter(chapterId, body.title(), principal);
+        return structure.renameChapter(chapterId, body.title(), body.version(), principal);
     }
 
     @DeleteMapping("/chapters/{chapterId}")

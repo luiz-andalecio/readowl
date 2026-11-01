@@ -3,8 +3,11 @@ package br.com.readowl.readowl.shared.exception;
 import org.hibernate.exception.ConstraintViolationException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.dao.DataAccessResourceFailureException;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.dao.OptimisticLockingFailureException;
+import org.springframework.dao.PessimisticLockingFailureException;
+import org.springframework.dao.TransientDataAccessException;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.HttpStatusCode;
@@ -12,6 +15,7 @@ import org.springframework.http.ProblemDetail;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.AccessDeniedException;
 import org.springframework.security.core.AuthenticationException;
+import org.springframework.transaction.CannotCreateTransactionException;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
@@ -28,6 +32,7 @@ public class GlobalExceptionHandler extends ResponseEntityExceptionHandler {
 
     private static final Logger log = LoggerFactory.getLogger(GlobalExceptionHandler.class);
     private static final Set<String> UNSTORABLE_TEXT_STATES = Set.of("22021", "22P05");
+    private static final String RETRY_AFTER_SECONDS = "2";
 
     @ExceptionHandler(ApiException.class)
     ProblemDetail handleApiException(ApiException ex) {
@@ -47,6 +52,20 @@ public class GlobalExceptionHandler extends ResponseEntityExceptionHandler {
     ProblemDetail handleOptimisticLock(OptimisticLockingFailureException ex) {
         return ApiProblems.of(HttpStatus.CONFLICT, "CONCURRENT_MODIFICATION",
                 "O recurso foi alterado por outra operação. Recarregue e tente novamente.");
+    }
+
+    /**
+     * Bloqueio, consulta acima do tempo máximo ou banco sem conexão livre: passa sozinho, e o cliente pode tentar
+     * de novo. O conflito de versão, que também é de concorrência, tem o tratamento próprio acima.
+     */
+    @ExceptionHandler({PessimisticLockingFailureException.class, TransientDataAccessException.class,
+            DataAccessResourceFailureException.class, CannotCreateTransactionException.class})
+    ResponseEntity<ProblemDetail> handleTemporaryFailure(Exception ex) {
+        log.warn("Falha temporaria no banco: causa={}", ex.getClass().getSimpleName());
+        return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE)
+                .header(HttpHeaders.RETRY_AFTER, RETRY_AFTER_SECONDS)
+                .body(ApiProblems.of(HttpStatus.SERVICE_UNAVAILABLE, "TEMPORARILY_UNAVAILABLE",
+                        "O serviço está temporariamente indisponível. Tente novamente em instantes."));
     }
 
     @ExceptionHandler(DataIntegrityViolationException.class)

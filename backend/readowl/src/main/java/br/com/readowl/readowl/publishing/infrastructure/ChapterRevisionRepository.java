@@ -20,6 +20,24 @@ public interface ChapterRevisionRepository extends JpaRepository<ChapterRevision
     @Query("select coalesce(max(r.revisionNumber), 0) from ChapterRevision r where r.chapter.id = :chapterId")
     int findMaxRevisionNumber(UUID chapterId);
 
+    /**
+     * Tamanho gravado, já comprimido pelo banco. pg_column_size não lê os textos, só os tamanhos deles.
+     */
+    @Query(value = """
+            SELECT CAST(
+                COALESCE((SELECT sum(pg_column_size(r.document) + pg_column_size(r.plain_text) + pg_column_size(r.html))
+                          FROM chapter_revisions r
+                          JOIN chapters c ON c.id = r.chapter_id
+                          JOIN books b ON b.id = c.book_id
+                          WHERE b.author_id = :authorId), 0)
+                + COALESCE((SELECT sum(pg_column_size(d.document))
+                            FROM chapter_drafts d
+                            JOIN chapters c ON c.id = d.chapter_id
+                            JOIN books b ON b.id = c.book_id
+                            WHERE b.author_id = :authorId), 0) AS bigint)
+            """, nativeQuery = true)
+    long sumStoredBytesOfAuthor(UUID authorId);
+
     @Query(value = """
             select new br.com.readowl.readowl.publishing.infrastructure.ChapterRevisionRepository$RevisionRow(
                 r.id, r.revisionNumber, r.formatVersion, u.username, r.createdAt)

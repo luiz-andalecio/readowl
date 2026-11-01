@@ -62,6 +62,8 @@ public class NotificationQueue {
      * reprocessamento seguro. Se o capítulo saiu do ar nesse meio tempo, ninguém é notificado.
      */
     public void fanOut(UUID eventId) {
+        // Obras muito seguidas podem levar mais que o tempo máximo normal de um comando.
+        jdbc.update("SET LOCAL statement_timeout = 0", Map.of());
         jdbc.update("""
                 INSERT INTO notifications (id, user_id, type, book_id, chapter_id, event_id, created_at,
                                            email_status, email_next_attempt_at)
@@ -92,19 +94,30 @@ public class NotificationQueue {
         return jdbc.update("DELETE FROM outbox_events WHERE processed_at < now() - interval '30 days'", Map.of());
     }
 
+    /**
+     * Reservar adia a próxima tentativa, em um único comando: ninguém mais pega o e-mail durante o envio, que
+     * acontece fora de transação. Se a aplicação cair no meio dele, o prazo vence e outra instância o assume.
+     */
     public List<PendingEmail> claimEmails(int limit) {
         return jdbc.query("""
+                WITH due AS (
+                    SELECT id FROM notifications
+                    WHERE email_status = 'PENDING' AND email_next_attempt_at <= now()
+                    ORDER BY email_next_attempt_at, id LIMIT :limit FOR UPDATE SKIP LOCKED
+                ), claimed AS (
+                    UPDATE notifications n SET email_next_attempt_at = now() + interval '10 minutes'
+                    FROM due WHERE n.id = due.id
+                    RETURNING n.id, n.user_id, n.book_id, n.chapter_id
+                )
                 SELECT n.id, u.email, b.title AS book_title, b.slug AS book_slug, c.title AS chapter_title,
                        c.slug AS chapter_slug,
                        u.status = 'ACTIVE' AND u.email_new_chapters AND b.publication_state = 'PUBLISHED'
                            AND a.status = 'ACTIVE' AND c.state = 'PUBLISHED' AS deliverable
-                FROM notifications n
+                FROM claimed n
                 JOIN users u ON u.id = n.user_id
                 JOIN books b ON b.id = n.book_id
                 JOIN users a ON a.id = b.author_id
                 JOIN chapters c ON c.id = n.chapter_id
-                WHERE n.email_status = 'PENDING' AND n.email_next_attempt_at <= now()
-                ORDER BY n.email_next_attempt_at, n.id LIMIT :limit FOR UPDATE OF n SKIP LOCKED
                 """, Map.of("limit", limit), (rs, row) -> new PendingEmail(rs.getObject("id", UUID.class),
                 rs.getString("email"), rs.getString("book_title"), rs.getString("book_slug"),
                 rs.getString("chapter_title"), rs.getString("chapter_slug"), rs.getBoolean("deliverable")));

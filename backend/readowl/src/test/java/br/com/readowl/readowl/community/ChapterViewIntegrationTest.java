@@ -309,7 +309,7 @@ class ChapterViewIntegrationTest {
 
         assertThat(reader.get("/api/v1/books/" + book + "/contents").status()).isEqualTo(403);
         String slug = author.get("/api/v1/books/" + book + "/details").json().at("/slug").asString();
-        assertThat(reader.get("/api/v1/books/" + slug).json().at("/chapters/0").has("viewCount")).isFalse();
+        assertThat(reader.get("/api/v1/books/" + slug + "/chapters").json().at("/content/0").has("viewCount")).isFalse();
         assertThat(reader.get("/api/v1/books/" + slug + "/chapters/capitulo-1").body()).doesNotContain("viewCount");
     }
 

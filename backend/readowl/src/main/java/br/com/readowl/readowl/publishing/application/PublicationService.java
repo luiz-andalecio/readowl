@@ -43,10 +43,12 @@ public class PublicationService {
     private final JsonMapper jsonMapper;
     private final ApplicationEventPublisher events;
     private final ReadowlProperties.Limits limits;
+    private final StorageQuota storage;
 
     PublicationService(BookAccess bookAccess, ChapterAccess chapterAccess, ChapterDraftService drafts,
                        ChapterRepository chapters, ChapterRevisionRepository revisions, UserService users,
-                       JsonMapper jsonMapper, ApplicationEventPublisher events, ReadowlProperties properties) {
+                       JsonMapper jsonMapper, ApplicationEventPublisher events, ReadowlProperties properties,
+                       StorageQuota storage) {
         this.bookAccess = bookAccess;
         this.chapterAccess = chapterAccess;
         this.drafts = drafts;
@@ -56,6 +58,7 @@ public class PublicationService {
         this.jsonMapper = jsonMapper;
         this.events = events;
         this.limits = properties.limits();
+        this.storage = storage;
     }
 
     /**
@@ -86,6 +89,8 @@ public class PublicationService {
                 throw ApiException.conflict("REVISION_LIMIT_REACHED", "Este capítulo atingiu o limite de revisões publicadas.")
                         .withProperty("limit", limits.revisionsPerChapter());
             }
+            storage.requireRoom(chapter.getBook().getAuthor().getId(),
+                    rendered.json().length() + rendered.plainText().length() + rendered.html().length());
             chapter.publish(revisions.saveAndFlush(new ChapterRevision(chapter, revisionNumber, rendered.json(), draft.getFormatVersion(),
                     rendered.plainText(), rendered.html(), users.requireById(principal.id()))));
         }

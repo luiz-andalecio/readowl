@@ -1,6 +1,7 @@
 package br.com.readowl.readowl.auth;
 
-import br.com.readowl.readowl.auth.application.AccountMailRequested;
+import br.com.readowl.readowl.auth.application.AccountMailType;
+import br.com.readowl.readowl.auth.infrastructure.AccountMailQueue.PendingAccountMail;
 import br.com.readowl.readowl.shared.ratelimit.RateLimiter;
 import br.com.readowl.readowl.support.AccountFixtures;
 import br.com.readowl.readowl.support.ApiClient;
@@ -12,6 +13,8 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.web.server.LocalServerPort;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.security.crypto.password.PasswordEncoder;
+
+import java.util.UUID;
 
 import static br.com.readowl.readowl.support.AccountFixtures.PASSWORD;
 import static br.com.readowl.readowl.support.AccountFixtures.uniqueEmail;
@@ -46,10 +49,10 @@ class SensitiveDataIntegrationTest {
     }
 
     @Test
-    void mailEventDoesNotPrintTheToken() {
-        AccountMailRequested event = new AccountMailRequested(AccountMailRequested.Type.RESET_PASSWORD, "a@b.com", "segredo");
+    void pendingMailDoesNotPrintTheAddress() {
+        PendingAccountMail pending = new PendingAccountMail(UUID.randomUUID(), AccountMailType.RESET_PASSWORD, "a@b.com");
 
-        assertThat(event.toString()).doesNotContain("segredo").doesNotContain("a@b.com");
+        assertThat(pending.toString()).doesNotContain("a@b.com");
     }
 
     @Test

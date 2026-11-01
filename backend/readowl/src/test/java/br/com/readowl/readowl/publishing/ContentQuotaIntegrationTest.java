@@ -25,7 +25,8 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT, properties = {
         "readowl.limits.books-per-account=3", "readowl.limits.volumes-per-book=2",
-        "readowl.limits.chapters-per-book=2", "readowl.limits.revisions-per-chapter=2"})
+        "readowl.limits.chapters-per-book=2", "readowl.limits.revisions-per-chapter=2",
+        "readowl.limits.stored-bytes-per-account=400000"})
 @ActiveProfiles("test")
 @Import({TestDatabaseConfiguration.class, ApiTestConfiguration.class})
 class ContentQuotaIntegrationTest {
@@ -109,6 +110,28 @@ class ContentQuotaIntegrationTest {
 
         long changed = books.writeDraft(author, chapter, "Terceira");
         assertLimit(author.post(publish, body("draftVersion", changed)), "REVISION_LIMIT_REACHED", 2);
+    }
+
+    @Test
+    void publishingStopsAtTheStorageLimitAndTheDraftStaysSaved() {
+        String chapter = books.createChapter(author, books.createBook(author), "Capítulo");
+        long version = books.writeDraft(author, chapter, "a".repeat(150_000));
+
+        ApiClient.Response refused = author.post("/api/v1/chapters/" + chapter + "/publish", body("draftVersion", version));
+
+        assertLimit(refused, "STORAGE_LIMIT_REACHED", 400_000);
+        assertThat(author.get("/api/v1/chapters/" + chapter + "/draft").json().at("/version").asLong()).isEqualTo(version);
+    }
+
+    @Test
+    void aLargeDraftCountsAgainstTheStorageLimitAndASmallOneIsNotChecked() {
+        String path = "/api/v1/chapters/" + books.createChapter(author, books.createBook(author), "Capítulo") + "/draft";
+        long version = author.get(path).json().at("/version").asLong();
+
+        ApiClient.Response refused = author.put(path, body("version", version, "document", BookFixtures.document("a".repeat(450_000))));
+        assertLimit(refused, "STORAGE_LIMIT_REACHED", 400_000);
+
+        assertThat(author.put(path, body("version", version, "document", BookFixtures.document("Texto curto"))).status()).isEqualTo(200);
     }
 
     @Test

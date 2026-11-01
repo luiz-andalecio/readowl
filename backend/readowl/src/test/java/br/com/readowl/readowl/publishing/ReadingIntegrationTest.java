@@ -75,7 +75,8 @@ class ReadingIntegrationTest {
         assertThat(book.json().at("/slug").asString()).isEqualTo(slug);
         assertThat(book.json().at("/author/name").asString()).isEqualTo("Pessoa Leitora");
         assertThat(book.json().at("/viewCount").asLong()).isZero();
-        assertThat(book.json().at("/chapters/0/slug").asString()).isEqualTo("capitulo-1");
+        assertThat(book.json().at("/publishedChapters").asLong()).isEqualTo(1);
+        assertThat(anonymous.get(bookPath(slug) + "/chapters").json().at("/content/0/slug").asString()).isEqualTo("capitulo-1");
         assertThat(book.setCookies()).isEmpty();
 
         assertThat(chapter.status()).isEqualTo(200);
@@ -113,7 +114,7 @@ class ReadingIntegrationTest {
         assertThat(book.body()).doesNotContain(email).doesNotContain("publicationState");
         assertThat(chapter.body()).doesNotContain(email).doesNotContain("plainText").doesNotContain("document")
                 .doesNotContain("viewCount").doesNotContain("revisionNumber");
-        assertThat(book.json().at("/chapters/0").has("viewCount")).isFalse();
+        assertThat(anonymous.get(bookPath(slug) + "/chapters").json().at("/content/0").has("viewCount")).isFalse();
     }
 
     @Test
@@ -144,7 +145,10 @@ class ReadingIntegrationTest {
 
         ApiClient.Response book = anonymous.get(bookPath(slug));
 
-        assertThat(book.json().at("/chapters").size()).isEqualTo(1);
+        ApiClient.Response list = anonymous.get(bookPath(slug) + "/chapters");
+        assertThat(book.json().at("/publishedChapters").asLong()).isEqualTo(1);
+        assertThat(list.json().at("/totalElements").asLong()).isEqualTo(1);
+        assertThat(list.body()).doesNotContain("Rascunho Oculto").doesNotContain("Retirado");
         assertThat(book.body()).doesNotContain("Rascunho Oculto").doesNotContain("Retirado");
         assertThat(anonymous.get(chapterPath(slug, "rascunho-oculto")).code()).isEqualTo("CHAPTER_NOT_FOUND");
         assertThat(anonymous.get(chapterPath(slug, "retirado")).code()).isEqualTo("CHAPTER_NOT_FOUND");
@@ -220,7 +224,7 @@ class ReadingIntegrationTest {
 
         JsonNode book = anonymous.get(bookPath(slug)).json();
         List<String> order = new ArrayList<>();
-        book.at("/chapters").values().forEach(chapter -> order.add(chapter.at("/slug").asString()));
+        anonymous.get(bookPath(slug) + "/chapters").json().at("/content").values().forEach(chapter -> order.add(chapter.at("/slug").asString()));
         assertThat(order).containsExactly("prologo", "em-a", "em-b");
         assertThat(book.at("/volumes/0/title").asString()).isEqualTo("Volume A");
         assertThat(book.at("/volumes/1/title").asString()).isEqualTo("Volume B");

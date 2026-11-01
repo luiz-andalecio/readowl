@@ -2,6 +2,7 @@ package br.com.readowl.readowl.publishing.infrastructure;
 
 import br.com.readowl.readowl.book.domain.BookStatus;
 import br.com.readowl.readowl.genre.application.TaxonomyItem;
+import br.com.readowl.readowl.shared.text.Texts;
 import org.springframework.jdbc.core.namedparam.MapSqlParameterSource;
 import org.springframework.jdbc.core.namedparam.NamedParameterJdbcTemplate;
 import org.springframework.stereotype.Repository;
@@ -125,7 +126,7 @@ public class CatalogQueries {
         if (filter.query() != null) {
             sql.append(QUERY_FILTER);
             parameters.addValue("query", filter.query());
-            parameters.addValue("likeQuery", escapeLike(filter.query()));
+            parameters.addValue("likeQuery", Texts.escapeLike(filter.query()));
         }
         if (filter.status() != null) {
             sql.append(" AND b.status = :status");
@@ -159,9 +160,5 @@ public class CatalogQueries {
     private static Instant instant(ResultSet rs, String column) throws SQLException {
         OffsetDateTime value = rs.getObject(column, OffsetDateTime.class);
         return value == null ? null : value.toInstant();
-    }
-
-    private static String escapeLike(String text) {
-        return text.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_");
     }
 }

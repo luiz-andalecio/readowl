@@ -55,15 +55,22 @@ class BookController {
     BookDetails update(@AuthenticationPrincipal SessionUser principal, @PathVariable UUID id,
                        @Valid @RequestBody UpdateBookRequest body) {
         return books.update(id, new BookService.BookChanges(body.title(), body.acronym(), body.synopsis(),
-                body.releaseFrequency(), body.status(), body.genreIds(), body.tags()), principal);
+                body.releaseFrequency(), body.status(), body.genreIds(), body.tags(), body.version()), principal);
     }
 
     @DeleteMapping("/books/{id}")
     @ResponseStatus(HttpStatus.NO_CONTENT)
     @RateLimited(RateLimitPolicy.AUTHORING_ACCOUNT)
     void delete(@AuthenticationPrincipal SessionUser principal, @PathVariable UUID id,
-                @RequestParam(required = false) String confirmTitle) {
-        books.delete(id, confirmTitle, principal);
+                @RequestParam(required = false) String confirmTitle,
+                @RequestBody(required = false) DeleteBookRequest body) {
+        books.delete(id, body != null ? body.confirmTitle() : confirmTitle, principal);
+    }
+
+    /**
+     * No corpo, o título de uma obra privada não vai parar em logs de acesso. O parâmetro na URL continua aceito.
+     */
+    record DeleteBookRequest(String confirmTitle) {
     }
 
     @GetMapping("/users/me/books")

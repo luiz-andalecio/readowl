@@ -5,6 +5,7 @@ import br.com.readowl.readowl.banner.application.BannerService.BannerData;
 import br.com.readowl.readowl.banner.application.BannerService.BannerView;
 import br.com.readowl.readowl.shared.api.PageRequests;
 import br.com.readowl.readowl.shared.api.PageResponse;
+import br.com.readowl.readowl.shared.api.PublicCache;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.Min;
 import jakarta.validation.constraints.NotBlank;
@@ -70,6 +71,7 @@ class BannerController {
     }
 
     @GetMapping("/banners")
+    @PublicCache
     List<BannerService.PublicBanner> active() {
         return banners.listActive();
     }

@@ -2,7 +2,9 @@ package br.com.readowl.readowl.user.application;
 
 import br.com.readowl.readowl.shared.exception.ApiException;
 import br.com.readowl.readowl.shared.text.Slugs;
+import br.com.readowl.readowl.user.domain.Role;
 import br.com.readowl.readowl.user.domain.User;
+import br.com.readowl.readowl.user.domain.UserStatus;
 import br.com.readowl.readowl.user.infrastructure.UserRepository;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -22,14 +24,33 @@ public class UserService {
     /**
      * Poderiam se passar pela plataforma. "me", da rota /users/me, já é recusado pelo tamanho mínimo.
      */
-    private static final Set<String> RESERVED_USERNAMES =
-            Set.of("admin", "administrador", "moderador", "readowl", "root", "suporte");
+    private static final Set<String> RESERVED_USERNAMES = Set.of(
+            "admin", "administrador", "administrator", "moderador", "moderator", "mod", "readowl", "root", "suporte",
+            "support", "sistema", "system", "equipe", "staff", "team", "oficial", "official", "contato", "contact",
+            "ajuda", "help", "seguranca", "security");
     private static final int GENERATED_BASE_LENGTH = 20;
 
     private final UserRepository users;
 
     public UserService(UserRepository users) {
         this.users = users;
+    }
+
+    public record PublicProfile(String username, String name, String description, Instant createdAt) {
+
+        static PublicProfile from(User user) {
+            return new PublicProfile(user.getUsername(), user.getName(), user.getDescription(), user.getCreatedAt());
+        }
+    }
+
+    public record MyProfile(UUID id, String username, String name, String email, String description, Role role,
+                            boolean emailVerified, boolean emailNewChapters, Instant createdAt) {
+
+        static MyProfile from(User user) {
+            return new MyProfile(user.getId(), user.getUsername(), user.getName(), user.getEmail(),
+                    user.getDescription(), user.getRole(), user.isEmailVerified(), user.isEmailNewChapters(),
+                    user.getCreatedAt());
+        }
     }
 
     public Optional<User> findByEmail(String email) {
@@ -52,6 +73,21 @@ public class UserService {
         return users.findByUsername(User.normalizeUsername(username))
                 .filter(user -> user.isActive() && user.isEmailVerified())
                 .orElseThrow(() -> ApiException.notFound("USER_NOT_FOUND", "Usuário não encontrado."));
+    }
+
+    /**
+     * A conta continua ativa e com o mesmo papel que a sessão guarda.
+     */
+    public boolean hasAccess(UUID id, Role role) {
+        return users.existsByIdAndRoleAndStatus(id, role, UserStatus.ACTIVE);
+    }
+
+    public PublicProfile publicProfile(String username) {
+        return PublicProfile.from(requirePublicProfile(username));
+    }
+
+    public MyProfile myProfile(UUID id) {
+        return MyProfile.from(requireById(id));
     }
 
     public boolean isUsernameUnavailable(String username) {
@@ -79,13 +115,13 @@ public class UserService {
      * Campos nulos não são alterados.
      */
     @Transactional
-    public User updateProfile(UUID id, String name, String description, Boolean emailNewChapters) {
+    public MyProfile updateProfile(UUID id, String name, String description, Boolean emailNewChapters) {
         User user = requireById(id);
         user.updateProfile(name, description);
         if (emailNewChapters != null) {
             user.changeEmailNewChapters(emailNewChapters);
         }
-        return user;
+        return MyProfile.from(user);
     }
 
     public Map<UUID, String> usernamesById(Collection<UUID> ids) {

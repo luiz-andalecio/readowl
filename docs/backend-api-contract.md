@@ -76,6 +76,7 @@ Erros de validação trazem também `errors`:
 | 429 | `RATE_LIMITED` | Muitas tentativas. O header `Retry-After` informa os segundos de espera |
 | 500 | `INTERNAL_ERROR` | Erro inesperado |
 | 503 | `AUTHENTICATION_BUSY` | Muitas verificações de senha ao mesmo tempo. Vale para login, cadastro e troca de senha. Tente de novo em instantes |
+| 503 | `TEMPORARILY_UNAVAILABLE` | Falha passageira no banco, como bloqueio ou consulta acima do tempo máximo. O header `Retry-After` informa a espera |
 
 Outros erros de protocolo usam o nome do status HTTP como `code`, por exemplo `UNSUPPORTED_MEDIA_TYPE`. Os códigos de cada operação estão junto dos endpoints.
 
@@ -104,6 +105,12 @@ A autenticação é por cookie de sessão `HttpOnly`, inacessível ao JavaScript
 | Nome do cookie | `SESSION` em desenvolvimento; `__Host-SESSION` em produção |
 | Atributos | `HttpOnly`, `SameSite=Lax`, `Path=/`; `Secure` em produção |
 | Duração | Expira após 14 dias sem uso, e o cookie dura 14 dias a partir do login |
+
+Escritas e rotas de `/admin` e `/moderation` conferem a conta a cada requisição. Se ela foi suspensa ou mudou de papel, a sessão é encerrada e a resposta é 401 `UNAUTHENTICATED`.
+
+### Cache
+
+As rotas públicas de leitura enviam `Cache-Control: public, max-age=30`: catálogo, obra, índice, capítulo, banners e perfil público. `GET /genres` usa 300 segundos. Conteúdo tirado do ar pode continuar em caches por esse tempo. As demais respostas, inclusive os erros, enviam `no-store`.
 
 ## Autenticação
 
@@ -207,6 +214,8 @@ Inicia a sessão. Público.
 ```
 
 **200**, com o mesmo corpo de `GET /auth/session`. Emite o cookie de sessão e descarta o token CSRF.
+
+No primeiro login em cada navegador, emite também o cookie `READOWL_DEVICE`, `HttpOnly` e restrito a esta rota, válido por 90 dias. O frontend não precisa tratá-lo. Com ele, o login continua funcionando mesmo se um ataque de muitos IPs esgotar o limite da conta. Trocar ou recuperar a senha desfaz isso em todos os navegadores.
 
 | Status | `code` | Quando |
 |---|---|---|
@@ -380,7 +389,7 @@ Lista todos os gêneros em ordem alfabética. Público.
 
 ### `GET /tags?query=mag`
 
-Sugere até 20 tags que começam com o texto informado. Público, para o campo de autocompletar.
+Sugere até 20 tags que começam com o texto informado e estão em alguma obra publicada. Uma tag nova só passa a ser sugerida depois disso. Público, para o campo de autocompletar.
 
 **200**, no mesmo formato de `GET /genres`.
 
@@ -408,6 +417,10 @@ Protegem o armazenamento contra abuso e valem por conta. Passar de um limite por
 | Volumes por obra | 200 | `VOLUME_LIMIT_REACHED` |
 | Capítulos por obra | 5.000 | `CHAPTER_LIMIT_REACHED` |
 | Revisões publicadas por capítulo | 500 | `REVISION_LIMIT_REACHED` |
+
+Além disso, a conta tem um limite de 2 GiB para o texto gravado em rascunhos e revisões, já comprimido. Passar dele responde 409 `STORAGE_LIMIT_REACHED`, com `limit` em bytes, ao publicar ou ao salvar um rascunho grande, a partir de 256 KiB.
+
+Capítulo publicado com a obra fora do ar não gera notificação, nem quando a obra volta ao ar.
 
 ### O slug muda com o nome
 
@@ -473,11 +486,17 @@ Dados completos da obra para quem pode alterá-la. **200**, com o corpo acima.
 
 Aceita os campos de `POST /books` e `status`. Campos ausentes não mudam. `releaseFrequency` em branco é removida. `genreIds` e `tags` substituem a lista inteira.
 
+`version` é opcional e recomendado em telas de edição: envie o valor lido em `GET /books/{id}/details`. Se a obra mudou depois disso, a resposta é 409 `VERSION_CONFLICT`, com `currentVersion`, sem alterar nada. Vale também para `PATCH /volumes/{id}` e `PATCH /chapters/{id}`.
+
 **200**, com o corpo acima. Pode responder 409 `BOOK_SLUG_TAKEN`, sem alterar nada.
 
-### `DELETE /books/{id}?confirmTitle=<título exato>`
+### `DELETE /books/{id}`
 
-**Exclui a obra com capítulos, comentários e avaliações, sem volta.** Peça ao usuário para digitar o título.
+**Exclui a obra com capítulos, comentários e avaliações, sem volta.** Peça ao usuário para digitar o título e envie-o no corpo. O parâmetro `?confirmTitle=` também é aceito, mas deixa o título em logs de acesso.
+
+```json
+{ "confirmTitle": "Título exato da obra" }
+```
 
 **204**, sem corpo.
 
@@ -582,19 +601,34 @@ Página da obra.
   "lastChapterPublishedAt": "2026-10-31T19:32:15.393101Z",
   "createdAt": "2026-10-31T19:32:15.393101Z",
   "volumes": [{ "id": "019f...", "title": "Volume 1" }],
-  "chapters": [{
+  "publishedChapters": 12
+}
+```
+
+Volumes sem capítulos publicados não aparecem. A lista de capítulos fica em `GET /books/{slug}/chapters`.
+
+Responde 404 `BOOK_NOT_FOUND` se a obra não for pública.
+
+### `GET /books/{slug}/chapters`
+
+Índice da obra, paginado: uma obra longa pode ter milhares de capítulos. Vem na ordem de leitura, primeiro os capítulos sem volume e depois cada volume em ordem. `size` padrão: 50. Não aceita `sort`.
+
+**200**
+```json
+{
+  "content": [{
     "id": "019f...",
     "title": "Prólogo",
     "slug": "prologo",
     "volumeId": "019f...",
     "publishedAt": "2026-10-31T19:32:15.393101Z"
-  }]
+  }],
+  "page": 0,
+  "size": 50,
+  "totalElements": 12,
+  "totalPages": 1
 }
 ```
-
-`chapters` vem na ordem de leitura: primeiro os capítulos sem volume, depois cada volume em ordem. Volumes sem capítulos publicados não aparecem.
-
-Responde 404 `BOOK_NOT_FOUND` se a obra não for pública.
 
 ### `GET /books/{slug}/chapters/{chapterSlug}`
 
@@ -1024,7 +1058,7 @@ Paginada, das mais antigas para as mais recentes por padrão. `sort`: `createdAt
 }
 ```
 
-`targetSnapshot` guarda o conteúdo no momento da denúncia, que continua disponível mesmo se o alvo for editado ou excluído. Em obras traz título e sinopse; em capítulos, título e número da revisão; em comentários, o texto; em usuários, nome de usuário, nome e descrição. **Exiba como texto. Quem denunciou não deve ser revelado fora da moderação.**
+`targetSnapshot` guarda o conteúdo no momento da denúncia, que continua disponível mesmo se o alvo for editado ou excluído. Em obras traz título e sinopse; em capítulos, título, número da revisão e os primeiros 50 mil caracteres do texto; em comentários, o texto; em usuários, nome de usuário, nome e descrição. **Exiba como texto. Quem denunciou não deve ser revelado fora da moderação.**
 
 ### `PATCH /moderation/reports/{id}`
 
@@ -1247,7 +1281,7 @@ Em `/api/v1/admin`. Responde 403 `ACCESS_DENIED` a quem não tem o papel exigido
 | `PATCH /admin/users/{id}` | `ROOT` | Edita um usuário |
 | `GET /admin/audit-log` | `ADMIN`, `ROOT` | Registro das ações administrativas |
 
-Gêneros e tags podem responder 409 com `GENRE_NAME_TAKEN`, `TAG_NAME_TAKEN`, `GENRE_IN_USE` ou `TAG_IN_USE`, e 404 com `GENRE_NOT_FOUND` ou `TAG_NOT_FOUND`.
+Gêneros e tags podem responder 409 com `GENRE_NAME_TAKEN`, `TAG_NAME_TAKEN`, `GENRE_IN_USE` ou `TAG_IN_USE`, e 404 com `GENRE_NOT_FOUND` ou `TAG_NOT_FOUND`. `DELETE /admin/tags/{id}?detach=true` retira a tag das obras antes de excluí-la, para remover uma tag imprópria já em uso.
 
 ### `PATCH /admin/users/{id}`
 
@@ -1308,10 +1342,14 @@ Das entradas mais recentes para as mais antigas, paginada. Filtros opcionais: `a
 | Encerramento de denúncia | `REPORT_CLOSED` |
 | Ocultar e restaurar, com o motivo | `BOOK_HIDDEN`, `BOOK_RESTORED`, `CHAPTER_HIDDEN`, `CHAPTER_RESTORED`, `COMMENT_HIDDEN`, `COMMENT_RESTORED` |
 | Demais alterações em `/admin` e `/moderation`, e tentativas que falham | Método e rota, como `POST /api/v1/admin/tags` |
-| Alterações de `ADMIN` e `ROOT` em obras e comentários de outras pessoas | Método e rota, como `PATCH /api/v1/books/{id}` |
-| Acesso recusado a `/admin` e `/moderation`, de quem está logado | Método e caminho, com `outcome` `DENIED` |
+| Alterações de `ADMIN` e `ROOT` em obras de outras pessoas | Método e rota, como `PATCH /api/v1/books/{id}` |
+| Edição e exclusão de comentários de outras pessoas, com o texto | `COMMENT_EDITED`, `COMMENT_DELETED` |
+| Exclusão de obras e capítulos de outras pessoas, com título e slug | `BOOK_DELETED`, `CHAPTER_DELETED` |
+| Leitura de rascunho de outra pessoa | `GET /api/v1/chapters/{chapterId}/draft` |
+| Consulta de usuários, que mostra e-mails | `GET /api/v1/admin/users` e `GET /api/v1/admin/users/{id}` |
+| Acesso recusado a `/admin` e `/moderation`, de quem está logado, até 60 por hora para cada conta | Método e caminho, com `outcome` `DENIED` |
 
-Leituras não são registradas.
+As demais leituras não são registradas.
 
 ## Operacional
 

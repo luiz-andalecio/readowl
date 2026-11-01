@@ -1,6 +1,7 @@
 package br.com.readowl.readowl.auth.application;
 
 import br.com.readowl.readowl.auth.infrastructure.AccountRepository;
+import br.com.readowl.readowl.auth.infrastructure.KnownDevices;
 import br.com.readowl.readowl.shared.exception.ApiException;
 import br.com.readowl.readowl.shared.ratelimit.RateLimitPolicy;
 import br.com.readowl.readowl.shared.ratelimit.RateLimiter;
@@ -20,32 +21,53 @@ public class LoginService {
     private final AccountRepository accounts;
     private final PasswordEncoder passwordEncoder;
     private final RateLimiter rateLimiter;
+    private final KnownDevices devices;
     private final String decoyHash;
 
     LoginService(UserService users, AccountRepository accounts, PasswordEncoder passwordEncoder,
-                 RateLimiter rateLimiter) {
+                 RateLimiter rateLimiter, KnownDevices devices) {
         this.users = users;
         this.accounts = accounts;
         this.passwordEncoder = passwordEncoder;
         this.rateLimiter = rateLimiter;
+        this.devices = devices;
         this.decoyHash = passwordEncoder.encode(UUID.randomUUID().toString());
+    }
+
+    /**
+     * @param newDeviceToken token para guardar no navegador, quando ele ainda não era conhecido
+     */
+    public record LoginResult(SessionUser user, String newDeviceToken) {
+
+        // O token não vai para logs.
+        @Override
+        public String toString() {
+            return "LoginResult[user=" + user + "]";
+        }
     }
 
     /**
      * Conta inexistente e senha errada dão a mesma resposta e custam o mesmo tempo. Os motivos de
      * recusa específicos só aparecem para quem provou conhecer a senha.
      * <p>
-     * O login certo zera as tentativas, e cada IP só gasta uma parte do limite da conta: errar a senha de
-     * outra pessoa não a impede de entrar.
+     * O login certo zera as tentativas, e cada IP só gasta uma parte do limite da conta: errar a senha de outra
+     * pessoa não a impede de entrar. Um navegador conhecido nem usa esse limite, então nem um ataque de muitos IPs
+     * bloqueia quem já entrou dele antes.
+     *
+     * @param deviceToken valor do cookie do navegador, se houver
      */
-    public SessionUser authenticate(String email, String password, String clientIp) {
+    public LoginResult authenticate(String email, String password, String clientIp, String deviceToken) {
         String account = User.normalizeEmail(email);
         String accountAtIp = account + "|" + clientIp;
         rateLimiter.acquire(RateLimitPolicy.LOGIN_IP, clientIp);
         rateLimiter.acquire(RateLimitPolicy.LOGIN_ACCOUNT_IP, accountAtIp);
-        rateLimiter.acquire(RateLimitPolicy.LOGIN_ACCOUNT, account);
 
         Optional<User> found = users.findByEmail(email).filter(User::hasPassword);
+        boolean knownDevice = deviceToken != null && found.isPresent() && devices.isKnown(deviceToken, found.get().getId());
+        if (!knownDevice) {
+            rateLimiter.acquire(RateLimitPolicy.LOGIN_ACCOUNT, account);
+        }
+
         boolean matches = passwordEncoder.matches(password, found.map(User::getPasswordHash).orElse(decoyHash));
         if (found.isEmpty() || !matches) {
             throw ApiException.unauthorized("INVALID_CREDENTIALS", "E-mail ou senha incorretos.");
@@ -60,7 +82,8 @@ public class LoginService {
         if (!user.isEmailVerified()) {
             throw ApiException.forbidden("EMAIL_NOT_VERIFIED", "Confirme seu e-mail antes de entrar.");
         }
-        return new SessionUser(user.getId(), user.getRole());
+        return new LoginResult(new SessionUser(user.getId(), user.getRole()),
+                knownDevice ? null : devices.register(user.getId()));
     }
 
     public SessionResponse describe(SessionUser principal) {

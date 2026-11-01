@@ -8,7 +8,6 @@ import br.com.readowl.readowl.auth.infrastructure.VerificationTokenRepository;
 import br.com.readowl.readowl.shared.exception.ApiException;
 import br.com.readowl.readowl.shared.security.Hashing;
 import br.com.readowl.readowl.user.domain.User;
-import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Propagation;
@@ -36,28 +35,31 @@ class AccountTokens {
     private final SecureRandom random = new SecureRandom();
     private final VerificationTokenRepository verificationTokens;
     private final PasswordResetTokenRepository resetTokens;
-    private final ApplicationEventPublisher events;
 
-    AccountTokens(VerificationTokenRepository verificationTokens, PasswordResetTokenRepository resetTokens,
-                  ApplicationEventPublisher events) {
+    AccountTokens(VerificationTokenRepository verificationTokens, PasswordResetTokenRepository resetTokens) {
         this.verificationTokens = verificationTokens;
         this.resetTokens = resetTokens;
-        this.events = events;
     }
 
-    void sendVerification(User user) {
+    /**
+     * @return o token em claro, que só existe aqui e no e-mail
+     */
+    String issueVerification(User user) {
         verificationTokens.deleteUnconsumedByUserId(user.getId());
         String token = newToken();
         verificationTokens.save(new VerificationToken(user, Hashing.sha256Hex(token),
                 Instant.now().plus(VERIFICATION_VALIDITY)));
-        events.publishEvent(new AccountMailRequested(AccountMailRequested.Type.VERIFY_EMAIL, user.getEmail(), token));
+        return token;
     }
 
-    void sendPasswordReset(User user) {
+    /**
+     * @return o token em claro, que só existe aqui e no e-mail
+     */
+    String issuePasswordReset(User user) {
         resetTokens.deleteUnconsumedByUserId(user.getId());
         String token = newToken();
         resetTokens.save(new PasswordResetToken(user, Hashing.sha256Hex(token), Instant.now().plus(RESET_VALIDITY)));
-        events.publishEvent(new AccountMailRequested(AccountMailRequested.Type.RESET_PASSWORD, user.getEmail(), token));
+        return token;
     }
 
     User consumeVerification(String token) {

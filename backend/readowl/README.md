@@ -129,6 +129,13 @@ Os testes de integração usam PostgreSQL real, de duas formas:
 | `ModerationIndependenceIntegrationTest` | Conteúdo oculto não é excluído, e ninguém modera o próprio conteúdo |
 | `ChapterViewPurgeIntegrationTest`, `DeniedAuditIntegrationTest` | Limpeza de visualizações e limite das recusas na auditoria |
 | `ClientAddressTest`, `ConcurrencyLimitedPasswordEncoderTest` | Agrupamento de IPv6 e limite de hashes simultâneos |
+| `AccountMailDeliveryIntegrationTest`, `EmailDeliveryIntegrationTest` | E-mails com SMTP fora do ar, reinício e envio fora de transação |
+| `SessionAccessIntegrationTest` | Conta suspensa ou rebaixada com sessão ativa, e sessão ilegível |
+| `SensitiveAuditIntegrationTest` | Leituras privadas e alterações administrativas na auditoria |
+| `PublicResponsesIntegrationTest` | Cache, cabeçalhos de segurança, `HEAD`, índice paginado e prontidão |
+| `ContentProtectionIntegrationTest` | Tags, cópia do capítulo na denúncia, slugs e versão nas edições |
+| `DatabaseTimeoutIntegrationTest` | Tempos máximos das conexões |
+| `SlugsTest`, `MailConnectionCheckTest` | Slugs e verificação do SMTP ao subir |
 | `SchemaConstraintsIntegrationTest` | Unicidade, FKs compostas, `CHECK`, cascatas e reordenação |
 | `EntityMappingIntegrationTest` | Mapeamentos JPA, carga LAZY, JSONB, lock otimista, rascunho separado do publicado |
 | `SecurityBaselineIntegrationTest` | Negação por padrão, CSRF, Actuator, formato dos erros |
@@ -221,18 +228,25 @@ As dependências seguem uma direção, sem ciclos: `publishing` e `library` conh
 ### Operação
 
 - **Notificações:** a publicação grava um evento em `outbox_events` na mesma transação. `NotificationWorker` roda a cada 15 segundos (`readowl.notifications.poll-interval`), com `FOR UPDATE SKIP LOCKED`, o que permite várias instâncias. Um único `INSERT` atende todos os seguidores, e a restrição `(user_id, event_id)` torna o reprocessamento seguro.
-- **Falhas:** eventos e e-mails têm até 3 tentativas com espera crescente. A falha fica na própria linha (`last_error`, `failed_at`, `email_last_error`, `email_status = 'FAILED'`) e não é repetida depois disso. Reprocessar exige alterar o banco.
+- **E-mails de conta:** o pedido fica em `account_mail_queue`, gravado na transação da operação. O envio tenta sair logo depois do commit, e o worker repete até 5 vezes. O token nasce na hora do envio, nunca fica na fila, e a linha é apagada depois do envio. Falhas definitivas ficam 7 dias.
+- **Envio fora de transação:** o worker reserva o e-mail adiando a próxima tentativa, envia sem transação e grava o resultado de cada um. Um SMTP lento não prende conexões, e a reserva vence sozinha se a aplicação cair.
+- **Falhas:** eventos e e-mails de capítulos têm até 3 tentativas com espera crescente. A falha fica na própria linha (`last_error`, `failed_at`, `email_last_error`, `email_status = 'FAILED'`) e não é repetida depois disso. Reprocessar exige alterar o banco.
 - **Limpeza:** eventos processados são apagados depois de 30 dias. Os que falharam ficam, e as notificações também: a retenção delas ainda não foi definida.
 - **E-mails de capítulos:** só com `users.email_new_chapters`, desligado por padrão. A entrega é ao menos uma vez: se a aplicação cair entre o envio e o commit, o e-mail se repete.
 - **Moderação:** ocultar tira o conteúdo do ar e impede republicar e excluir (`moderated_at`), para preservar a prova. Moderadores não restauram o próprio conteúdo nem encerram denúncias contra si; administradores podem, e a ação fica na auditoria. Suspender contas continua exclusivo do root.
-- **Auditoria:** `AuditTrail.record` grava na mesma transação da ação, para mudanças em usuários, moderação e denúncias. `AuditInterceptor` registra as demais alterações administrativas depois da resposta, então **uma queda nesse instante pode perder a entrada**. Corpos de requisição nunca são gravados. Recusas de segurança têm limite de 60 entradas por hora para cada conta, e as seguintes não são registradas. A retenção ainda não foi definida.
+- **Auditoria:** `AuditTrail.record` grava na mesma transação da ação, para mudanças em usuários, moderação e denúncias. `AuditInterceptor` registra as demais alterações administrativas depois da resposta, então **uma queda nesse instante pode perder a entrada**. Corpos de requisição nunca são gravados. Comentários editados ou excluídos pela administração guardam o texto na auditoria, e a leitura de rascunhos alheios e da lista de usuários também é registrada. Recusas de segurança têm limite de 60 entradas por hora para cada conta, e as seguintes não são registradas. A retenção ainda não foi definida.
 
 ### Produção
 
 - **Corpo das requisições:** a aplicação recusa JSON acima de 3 MiB ao ler. Configure também `client_max_body_size` no NGINX.
 - **Proxy:** o perfil `prod` só aceita `X-Forwarded-For` e `X-Forwarded-Proto` de conexões vindas de `TRUSTED_PROXIES`, e ignora os de qualquer outra origem. O cliente é o último endereço da lista que não é um proxy confiável, então tanto `$remote_addr` quanto `$proxy_add_x_forwarded_for` são seguros no NGINX. **Um valor errado em `TRUSTED_PROXIES` faz todos os clientes parecerem um só, o endereço do proxy, e dispara os limites por IP.**
 - **Limites por IP:** `ClientAddress` é o único ponto que decide quem é o cliente. Um bloco IPv6 `/64` conta como um único cliente.
-- **Login:** cada IP só gasta uma parte do limite da conta, e um login correto zera as tentativas. Um ataque distribuído, a partir de 10 IPs, ainda pode bloquear a conta por até 15 minutos, porque esse limite protege a senha.
+- **Login:** cada IP só gasta uma parte do limite da conta, e um login correto zera as tentativas. Um ataque a partir de 10 IPs ainda esgota esse limite, que protege a senha, mas não afeta navegadores em que a conta já entrou (`known_devices`, cookie `READOWL_DEVICE`). Em outro navegador, recuperar a senha libera o acesso.
+- **Sessões:** escritas e rotas administrativas conferem papel e status no banco a cada requisição, para o caso de a revogação ter falhado. Um atributo de sessão ilegível conta como ausente, e a pessoa só precisa entrar de novo. A sessão criada para iniciar o login com Google vale 10 minutos, e esse início tem limite por IP.
+- **Tempos máximos:** 5 s de espera por conexão, 30 s por comando e 60 s de transação parada, definidos na conexão. `beforeEachMigrate.sql` libera as migrations, e `NotificationQueue.fanOut` libera o envio a muitos seguidores. **Migrations com `CREATE INDEX CONCURRENTLY` ficam fora de transação e precisam definir o próprio tempo.**
+- **E-mail:** a aplicação testa a conexão com o SMTP ao subir e registra `ERROR` se falhar, sem impedir a inicialização.
+- **Cache:** `@PublicCache` marca as rotas públicas de leitura, com validade curta. As demais continuam com `no-store`.
 - **Hash de senha:** cada hash usa 19 MiB. `readowl.max-concurrent-password-hashes`, 16 por padrão, limita os simultâneos a cerca de 300 MiB. Quem espera mais de 5 segundos recebe 503.
-- **Cotas de conteúdo:** `readowl.limits.*` define obras por conta, volumes e capítulos por obra e revisões por capítulo. Os limites por tempo ficam em `RateLimitPolicy`, e `@RateLimited` os aplica às rotas. Eles reduzem o abuso de armazenamento, mas não há cota por volume de dados.
+- **Cotas de conteúdo:** `readowl.limits.*` define obras por conta, volumes e capítulos por obra, revisões por capítulo e bytes gravados por conta. Os limites por tempo ficam em `RateLimitPolicy`, e `@RateLimited` os aplica às rotas. `StorageQuota` só soma os bytes ao publicar e em rascunhos a partir de 256 KiB, porque a soma é cara para o salvamento automático.
+- **Tags:** só aparecem nas sugestões quando estão em uma obra publicada, e a administração pode retirar uma tag imprópria das obras com `?detach=true`.
 - **Atualizações:** as sessões usam serialização Java. Ao atualizar o Spring Security para outra versão principal ou renomear `SessionUser` ou `GoogleLinkIntent`, sessões antigas podem falhar ao carregar. Nesse caso, limpe a tabela `spring_session`, o que desconecta todos os usuários.

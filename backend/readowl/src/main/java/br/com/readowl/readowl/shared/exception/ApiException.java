@@ -42,6 +42,14 @@ public class ApiException extends RuntimeException {
         return new ApiException(HttpStatus.CONFLICT, code, detail);
     }
 
+    /**
+     * A versão informada pelo cliente não é mais a atual: outra pessoa alterou o recurso depois que ele o leu.
+     */
+    public static ApiException versionConflict(long currentVersion) {
+        return conflict("VERSION_CONFLICT", "Este item foi alterado por outra pessoa. Recarregue e tente novamente.")
+                .withProperty("currentVersion", currentVersion);
+    }
+
     public static ApiException serviceUnavailable(String code, String detail) {
         return new ApiException(HttpStatus.SERVICE_UNAVAILABLE, code, detail);
     }

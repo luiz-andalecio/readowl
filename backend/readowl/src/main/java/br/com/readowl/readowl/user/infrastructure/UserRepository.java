@@ -24,6 +24,8 @@ public interface UserRepository extends JpaRepository<User, UUID> {
 
     boolean existsByUsername(String username);
 
+    boolean existsByIdAndRoleAndStatus(UUID id, Role role, UserStatus status);
+
     @Lock(LockModeType.PESSIMISTIC_WRITE)
     List<User> findLockedByRoleAndStatus(Role role, UserStatus status);
 }

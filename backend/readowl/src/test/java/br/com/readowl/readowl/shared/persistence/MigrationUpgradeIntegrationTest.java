@@ -124,6 +124,20 @@ class MigrationUpgradeIntegrationTest {
     }
 
     @Test
+    void migrationsRunWithoutTheTimeLimitOfNormalQueries() {
+        Flyway.configure()
+                .dataSource(dataSource)
+                .schemas(SCHEMA)
+                .locations("classpath:db/timeoutprobe", "classpath:db/migration")
+                .target("0.1")
+                .load()
+                .migrate();
+
+        assertThat(jdbc.queryForObject("SELECT value FROM upgrade_test.timeout_probe", String.class)).isEqualTo("0");
+        assertThat(jdbc.queryForObject("SHOW statement_timeout", String.class)).as("sem afetar as conexões do pool").isEqualTo("30s");
+    }
+
+    @Test
     void repeatingTheMigrationDoesNothing() {
         flyway("latest").migrate();
 

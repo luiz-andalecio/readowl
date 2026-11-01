@@ -30,8 +30,10 @@ class AuditInterceptor implements HandlerInterceptor {
     public void afterCompletion(HttpServletRequest request, HttpServletResponse response, Object handler, Exception ex) {
         // O caminho interno, e não a URI: um cabeçalho X-Forwarded-Prefix muda a URI, mas não a rota atendida.
         String path = request.getServletPath();
-        if (SAFE_METHODS.contains(request.getMethod())
-                || !(AuditTrail.isAdministrativePath(path) || AuditContext.isOverride())) {
+        boolean audited = SAFE_METHODS.contains(request.getMethod())
+                ? AuditContext.isSensitiveRead()
+                : AuditTrail.isAdministrativePath(path) || AuditContext.isOverride();
+        if (!audited) {
             return;
         }
         AuditOutcome outcome = outcome(response.getStatus(), ex);

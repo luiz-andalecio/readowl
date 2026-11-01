@@ -11,11 +11,13 @@ import br.com.readowl.readowl.moderation.domain.ReportTargetType;
 import br.com.readowl.readowl.moderation.infrastructure.ReportRepository;
 import br.com.readowl.readowl.publishing.application.PublicChapters;
 import br.com.readowl.readowl.publishing.domain.Chapter;
+import br.com.readowl.readowl.publishing.domain.ChapterRevision;
 import br.com.readowl.readowl.shared.api.PageResponse;
 import br.com.readowl.readowl.shared.audit.AuditTrail;
 import br.com.readowl.readowl.shared.exception.ApiException;
 import br.com.readowl.readowl.shared.ratelimit.RateLimitPolicy;
 import br.com.readowl.readowl.shared.ratelimit.RateLimiter;
+import br.com.readowl.readowl.shared.text.Texts;
 import br.com.readowl.readowl.user.application.SessionUser;
 import br.com.readowl.readowl.user.application.UserService;
 import br.com.readowl.readowl.user.domain.User;
@@ -36,6 +38,9 @@ import java.util.UUID;
  */
 @Service
 public class ReportService {
+
+    // A cópia do capítulo preserva a prova mesmo se o autor o excluir antes da análise.
+    private static final int MAX_CHAPTER_SNAPSHOT_LENGTH = 50_000;
 
     private final ReportRepository reports;
     private final PublicBooks publicBooks;
@@ -103,7 +108,7 @@ public class ReportService {
                     throw alreadyOpen();
                 }
                 Report report = reports.saveAndFlush(new Report(users.requireById(principal.id()), data.targetType(),
-                        data.targetId(), target.owner(), target.snapshot(), data.reason(), blankToNull(data.details())));
+                        data.targetId(), target.owner(), target.snapshot(), data.reason(), Texts.blankToNull(data.details())));
                 return new ReportReceipt(report.getId(), report.getTargetType(), report.getTargetId(), report.getReason(),
                         report.getStatus(), report.getCreatedAt());
             });
@@ -150,7 +155,7 @@ public class ReportService {
         if (!report.isOpen()) {
             throw ApiException.conflict("REPORT_CLOSED", "Esta denúncia já foi encerrada.");
         }
-        report.close(status, blankToNull(note), users.requireById(principal.id()), Instant.now());
+        report.close(status, Texts.blankToNull(note), users.requireById(principal.id()), Instant.now());
         reports.saveAndFlush(report);
         audit.record(principal.id(), "REPORT_CLOSED", "reports/" + id, Map.of("status", status));
         return ReportView.from(report);
@@ -164,8 +169,11 @@ public class ReportService {
             }
             case CHAPTER -> {
                 Chapter chapter = publicChapters.requirePublic(id);
+                ChapterRevision revision = chapter.getPublishedRevision();
+                String text = revision.getPlainText();
                 yield new Target(chapter.getBook().getAuthor(),
-                        chapter.getTitle() + " (revisão " + chapter.getPublishedRevision().getRevisionNumber() + ")");
+                        chapter.getTitle() + " (revisão " + revision.getRevisionNumber() + ")\n\n"
+                                + text.substring(0, Math.min(text.length(), MAX_CHAPTER_SNAPSHOT_LENGTH)));
             }
             case COMMENT -> {
                 Comment comment = comments.requireVisible(id);
@@ -192,9 +200,5 @@ public class ReportService {
 
     private static ApiException alreadyOpen() {
         return ApiException.conflict("REPORT_ALREADY_OPEN", "Você já tem uma denúncia em aberto sobre este conteúdo.");
-    }
-
-    private static String blankToNull(String text) {
-        return text == null || text.isBlank() ? null : text.trim();
     }
 }

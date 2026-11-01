@@ -1,5 +1,6 @@
 package br.com.readowl.readowl.auth.application;
 
+import br.com.readowl.readowl.auth.infrastructure.KnownDevices;
 import br.com.readowl.readowl.shared.exception.ApiException;
 import br.com.readowl.readowl.shared.ratelimit.RateLimitPolicy;
 import br.com.readowl.readowl.shared.ratelimit.RateLimiter;
@@ -13,22 +14,26 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.support.TransactionOperations;
 
 import java.time.Instant;
-import java.util.UUID;
 
 @Service
 public class PasswordService {
 
     private final UserService users;
     private final AccountTokens tokens;
+    private final AccountMails mails;
+    private final KnownDevices devices;
     private final SessionManager sessions;
     private final PasswordEncoder passwordEncoder;
     private final RateLimiter rateLimiter;
     private final TransactionOperations transaction;
 
-    PasswordService(UserService users, AccountTokens tokens, SessionManager sessions, PasswordEncoder passwordEncoder,
-                    RateLimiter rateLimiter, TransactionOperations transaction) {
+    PasswordService(UserService users, AccountTokens tokens, AccountMails mails, KnownDevices devices,
+                    SessionManager sessions, PasswordEncoder passwordEncoder, RateLimiter rateLimiter,
+                    TransactionOperations transaction) {
         this.users = users;
         this.tokens = tokens;
+        this.mails = mails;
+        this.devices = devices;
         this.sessions = sessions;
         this.passwordEncoder = passwordEncoder;
         this.rateLimiter = rateLimiter;
@@ -45,23 +50,26 @@ public class PasswordService {
         rateLimiter.acquire(RateLimitPolicy.ACCOUNT_MAIL_EMAIL, normalizedEmail);
         transaction.executeWithoutResult(status -> users.findByEmail(normalizedEmail)
                 .filter(User::isActive)
-                .ifPresent(tokens::sendPasswordReset));
+                .ifPresent(user -> mails.request(AccountMailType.RESET_PASSWORD, user.getEmail())));
     }
 
     /**
      * Usar o link prova a posse do e-mail, então também o confirma. Isso substitui a senha de uma conta
-     * pré-cadastrada por outra pessoa, e todas as sessões da conta são encerradas.
+     * pré-cadastrada por outra pessoa, e todas as sessões da conta são encerradas. Também libera o login, que
+     * um ataque pode ter bloqueado, e faz os navegadores conhecidos perderem essa condição.
      */
     public void reset(String token, String newPassword, String clientIp) {
         rateLimiter.acquire(RateLimitPolicy.TOKEN_IP, clientIp);
         String passwordHash = passwordEncoder.encode(newPassword);
-        UUID userId = transaction.execute(status -> {
-            User user = tokens.consumePasswordReset(token);
-            user.changePasswordHash(passwordHash);
-            user.verifyEmail(Instant.now());
-            return user.getId();
+        User user = transaction.execute(status -> {
+            User consumed = tokens.consumePasswordReset(token);
+            consumed.changePasswordHash(passwordHash);
+            consumed.verifyEmail(Instant.now());
+            devices.forgetAll(consumed.getId());
+            return consumed;
         });
-        sessions.revokeAll(userId);
+        rateLimiter.reset(RateLimitPolicy.LOGIN_ACCOUNT, user.getEmail());
+        sessions.revokeAll(user.getId());
     }
 
     /**
@@ -82,6 +90,7 @@ public class PasswordService {
         transaction.executeWithoutResult(status -> {
             users.changePasswordHash(user.getId(), passwordHash);
             tokens.invalidatePasswordResets(user.getId());
+            devices.forgetAll(user.getId());
         });
         sessions.revokeAllExceptCurrent(user.getId(), request);
         sessions.establish(principal, request, response);

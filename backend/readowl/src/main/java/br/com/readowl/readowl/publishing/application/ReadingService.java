@@ -4,19 +4,20 @@ import br.com.readowl.readowl.book.application.PublicBooks;
 import br.com.readowl.readowl.book.domain.Book;
 import br.com.readowl.readowl.book.domain.BookStatus;
 import br.com.readowl.readowl.genre.application.TaxonomyItem;
+import br.com.readowl.readowl.publishing.domain.ChapterState;
+import br.com.readowl.readowl.publishing.infrastructure.ChapterNeighborQueries;
+import br.com.readowl.readowl.publishing.infrastructure.ChapterNeighborQueries.Neighbors;
 import br.com.readowl.readowl.publishing.infrastructure.ChapterRepository;
 import br.com.readowl.readowl.publishing.infrastructure.ChapterRepository.ChapterContentRow;
-import br.com.readowl.readowl.publishing.infrastructure.ChapterRepository.PublishedChapterRow;
+import br.com.readowl.readowl.shared.api.PageResponse;
 import br.com.readowl.readowl.shared.exception.ApiException;
+import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.Instant;
-import java.util.ArrayList;
 import java.util.Comparator;
-import java.util.LinkedHashMap;
 import java.util.List;
-import java.util.Map;
 import java.util.UUID;
 
 /**
@@ -30,10 +31,12 @@ public class ReadingService {
 
     private final PublicBooks publicBooks;
     private final ChapterRepository chapters;
+    private final ChapterNeighborQueries neighborQueries;
 
-    ReadingService(PublicBooks publicBooks, ChapterRepository chapters) {
+    ReadingService(PublicBooks publicBooks, ChapterRepository chapters, ChapterNeighborQueries neighborQueries) {
         this.publicBooks = publicBooks;
         this.chapters = chapters;
+        this.neighborQueries = neighborQueries;
     }
 
     public record AuthorView(String username, String name) {
@@ -48,7 +51,7 @@ public class ReadingService {
     public record PublicBook(UUID id, String title, String acronym, String slug, String synopsis,
                              String releaseFrequency, BookStatus status, long viewCount, AuthorView author,
                              List<TaxonomyItem> genres, List<TaxonomyItem> tags, Instant lastChapterPublishedAt,
-                             Instant createdAt, List<PublicVolume> volumes, List<PublicChapter> chapters) {
+                             Instant createdAt, List<PublicVolume> volumes, long publishedChapters) {
     }
 
     public record ChapterLink(String title, String slug) {
@@ -63,21 +66,23 @@ public class ReadingService {
 
     public PublicBook book(String slug) {
         Book book = publicBooks.requireBySlug(slug);
-        List<PublishedChapterRow> rows = chapters.findPublishedRows(book.getId());
-
-        Map<UUID, PublicVolume> volumes = new LinkedHashMap<>();
-        List<PublicChapter> items = new ArrayList<>(rows.size());
-        for (PublishedChapterRow row : rows) {
-            if (row.volumeId() != null) {
-                volumes.putIfAbsent(row.volumeId(), new PublicVolume(row.volumeId(), row.volumeTitle()));
-            }
-            items.add(new PublicChapter(row.id(), row.title(), row.slug(), row.volumeId(), row.publishedAt()));
-        }
         return new PublicBook(book.getId(), book.getTitle(), book.getAcronym(), book.getSlug(), book.getSynopsis(),
                 book.getReleaseFrequency(), book.getStatus(), book.getViewCount(), author(book),
                 book.getGenres().stream().map(TaxonomyItem::from).sorted(Comparator.comparing(TaxonomyItem::name)).toList(),
                 book.getTags().stream().map(TaxonomyItem::from).sorted(Comparator.comparing(TaxonomyItem::name)).toList(),
-                book.getLastChapterPublishedAt(), book.getCreatedAt(), List.copyOf(volumes.values()), items);
+                book.getLastChapterPublishedAt(), book.getCreatedAt(),
+                chapters.findPublishedVolumes(book.getId()).stream()
+                        .map(volume -> new PublicVolume(volume.id(), volume.title())).toList(),
+                chapters.countByBookIdAndState(book.getId(), ChapterState.PUBLISHED));
+    }
+
+    /**
+     * A lista vem em páginas: uma obra longa pode ter milhares de capítulos.
+     */
+    public PageResponse<PublicChapter> chapters(String slug, Pageable pageable) {
+        Book book = publicBooks.requireBySlug(slug);
+        return PageResponse.from(chapters.findPublishedRows(book.getId(), pageable)
+                .map(row -> new PublicChapter(row.id(), row.title(), row.slug(), row.volumeId(), row.publishedAt())));
     }
 
     public ChapterReading chapter(String bookSlug, String chapterSlug) {
@@ -85,27 +90,17 @@ public class ReadingService {
         ChapterContentRow chapter = chapters.findPublishedContent(book.getId(), chapterSlug)
                 .orElseThrow(() -> ApiException.notFound("CHAPTER_NOT_FOUND", "Capítulo não encontrado."));
 
-        List<PublishedChapterRow> rows = chapters.findPublishedRows(book.getId());
-        int position = indexOf(rows, chapter.id());
+        Neighbors neighbors = neighborQueries.find(book.getId(), chapter.id());
         return new ChapterReading(chapter.id(), chapter.title(), chapter.slug(),
                 chapter.volumeId() == null ? null : new PublicVolume(chapter.volumeId(), chapter.volumeTitle()),
                 chapter.html(), chapter.publishedAt(),
                 new BookLink(book.getId(), book.getTitle(), book.getSlug(), author(book)),
-                position > 0 ? link(rows.get(position - 1)) : null,
-                position < rows.size() - 1 ? link(rows.get(position + 1)) : null);
+                link(neighbors.previousTitle(), neighbors.previousSlug()),
+                link(neighbors.nextTitle(), neighbors.nextSlug()));
     }
 
-    private static int indexOf(List<PublishedChapterRow> rows, UUID chapterId) {
-        for (int position = 0; position < rows.size(); position++) {
-            if (rows.get(position).id().equals(chapterId)) {
-                return position;
-            }
-        }
-        throw new IllegalStateException("Capítulo publicado ausente do índice da obra");
-    }
-
-    private static ChapterLink link(PublishedChapterRow row) {
-        return new ChapterLink(row.title(), row.slug());
+    private static ChapterLink link(String title, String slug) {
+        return slug == null ? null : new ChapterLink(title, slug);
     }
 
     private static AuthorView author(Book book) {

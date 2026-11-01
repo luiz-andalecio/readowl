@@ -3,6 +3,7 @@ package br.com.readowl.readowl.support;
 import br.com.readowl.readowl.shared.exception.ApiException;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotBlank;
+import org.springframework.dao.CannotAcquireLockException;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.dao.OptimisticLockingFailureException;
 import org.springframework.http.HttpStatus;
@@ -49,6 +50,11 @@ class ErrorScenarioController {
     @GetMapping("/access-denied")
     void accessDenied() {
         throw new AccessDeniedException(SENSITIVE_DETAIL);
+    }
+
+    @GetMapping("/temporary")
+    void temporary() {
+        throw new CannotAcquireLockException(SENSITIVE_DETAIL);
     }
 
     @GetMapping("/unexpected")

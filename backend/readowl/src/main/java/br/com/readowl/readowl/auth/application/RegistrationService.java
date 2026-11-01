@@ -5,7 +5,6 @@ import br.com.readowl.readowl.shared.ratelimit.RateLimitPolicy;
 import br.com.readowl.readowl.shared.ratelimit.RateLimiter;
 import br.com.readowl.readowl.user.application.UserService;
 import br.com.readowl.readowl.user.domain.User;
-import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
@@ -25,18 +24,18 @@ public class RegistrationService {
 
     private final UserService users;
     private final AccountTokens tokens;
+    private final AccountMails mails;
     private final PasswordEncoder passwordEncoder;
     private final RateLimiter rateLimiter;
-    private final ApplicationEventPublisher events;
     private final TransactionOperations transaction;
 
-    RegistrationService(UserService users, AccountTokens tokens, PasswordEncoder passwordEncoder,
-                        RateLimiter rateLimiter, ApplicationEventPublisher events, TransactionOperations transaction) {
+    RegistrationService(UserService users, AccountTokens tokens, AccountMails mails, PasswordEncoder passwordEncoder,
+                        RateLimiter rateLimiter, TransactionOperations transaction) {
         this.users = users;
         this.tokens = tokens;
+        this.mails = mails;
         this.passwordEncoder = passwordEncoder;
         this.rateLimiter = rateLimiter;
-        this.events = events;
         this.transaction = transaction;
     }
 
@@ -53,11 +52,11 @@ public class RegistrationService {
                     throw usernameTaken();
                 }
                 if (users.findByEmail(normalizedEmail).isPresent()) {
-                    events.publishEvent(new AccountMailRequested(
-                            AccountMailRequested.Type.ACCOUNT_ALREADY_EXISTS, normalizedEmail, null));
+                    mails.request(AccountMailType.ACCOUNT_ALREADY_EXISTS, normalizedEmail);
                     return;
                 }
-                tokens.sendVerification(users.create(name, username, normalizedEmail, passwordHash));
+                users.create(name, username, normalizedEmail, passwordHash);
+                mails.request(AccountMailType.VERIFY_EMAIL, normalizedEmail);
             });
         } catch (DataIntegrityViolationException ex) {
             // Dois cadastros simultâneos: o perdedor recebe a resposta que teria se tivesse chegado
@@ -93,6 +92,6 @@ public class RegistrationService {
         rateLimiter.acquire(RateLimitPolicy.ACCOUNT_MAIL_EMAIL, normalizedEmail);
         transaction.executeWithoutResult(status -> users.findByEmail(normalizedEmail)
                 .filter(user -> user.isActive() && !user.isEmailVerified())
-                .ifPresent(tokens::sendVerification));
+                .ifPresent(user -> mails.request(AccountMailType.VERIFY_EMAIL, user.getEmail())));
     }
 }

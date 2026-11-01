@@ -126,6 +126,18 @@ class GoogleLoginIntegrationTest {
     }
 
     @Test
+    void startingTheLoginIsLimitedPerAddress() {
+        ApiClient.Response last = null;
+        for (int attempt = 0; attempt < 31; attempt++) {
+            last = accounts.client().get(START);
+        }
+
+        assertThat(last.status()).isEqualTo(302);
+        assertThat(last.location()).isEqualTo("https://readowl.test/login?error=RATE_LIMITED");
+        assertThat(last.setCookies()).as("sem criar sessão").isEmpty();
+    }
+
+    @Test
     void redirectGoesToTheProviderWithStateAndNonce() {
         ApiClient.Response start = accounts.client().get(START);
 

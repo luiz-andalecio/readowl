@@ -5,10 +5,12 @@ import br.com.readowl.readowl.book.domain.BookStatus;
 import br.com.readowl.readowl.book.infrastructure.BookRepository;
 import br.com.readowl.readowl.genre.application.TaxonomyService;
 import br.com.readowl.readowl.shared.api.PageResponse;
+import br.com.readowl.readowl.shared.audit.AuditTrail;
 import br.com.readowl.readowl.shared.config.ReadowlProperties;
 import br.com.readowl.readowl.shared.exception.ApiException;
 import br.com.readowl.readowl.shared.ratelimit.RateLimitPolicy;
 import br.com.readowl.readowl.shared.ratelimit.RateLimiter;
+import br.com.readowl.readowl.shared.text.Texts;
 import br.com.readowl.readowl.user.application.SessionUser;
 import br.com.readowl.readowl.user.application.UserService;
 import org.springframework.dao.DataIntegrityViolationException;
@@ -18,6 +20,7 @@ import org.springframework.transaction.annotation.Transactional;
 import org.springframework.transaction.support.TransactionOperations;
 
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Supplier;
@@ -31,16 +34,19 @@ public class BookService {
     private final TaxonomyService taxonomy;
     private final TransactionOperations transaction;
     private final RateLimiter rateLimiter;
+    private final AuditTrail audit;
     private final ReadowlProperties.Limits limits;
 
     BookService(BookRepository books, BookAccess access, UserService users, TaxonomyService taxonomy,
-                TransactionOperations transaction, RateLimiter rateLimiter, ReadowlProperties properties) {
+                TransactionOperations transaction, RateLimiter rateLimiter, AuditTrail audit,
+                ReadowlProperties properties) {
         this.books = books;
         this.access = access;
         this.users = users;
         this.taxonomy = taxonomy;
         this.transaction = transaction;
         this.rateLimiter = rateLimiter;
+        this.audit = audit;
         this.limits = properties.limits();
     }
 
@@ -52,7 +58,7 @@ public class BookService {
      * Campos nulos não são alterados.
      */
     public record BookChanges(String title, String acronym, String synopsis, String releaseFrequency,
-                              BookStatus status, List<UUID> genreIds, List<String> tagNames) {
+                              BookStatus status, List<UUID> genreIds, List<String> tagNames, Long version) {
     }
 
     public BookDetails create(NewBook data, SessionUser principal) {
@@ -66,7 +72,7 @@ public class BookService {
             requireFreeSlug(slug);
             Book book = new Book(title, data.acronym(), slug, data.synopsis().trim(),
                     users.requireById(principal.id()));
-            book.updateReleaseFrequency(blankToNull(data.releaseFrequency()));
+            book.updateReleaseFrequency(Texts.blankToNull(data.releaseFrequency()));
             book.replaceGenres(taxonomy.requireGenres(data.genreIds()));
             book.replaceTags(taxonomy.resolveTags(data.tagNames() == null ? List.of() : data.tagNames()));
             return BookDetails.from(books.saveAndFlush(book));
@@ -81,6 +87,9 @@ public class BookService {
         AtomicReference<String> targetSlug = new AtomicReference<>();
         return translatingSlugConflict(targetSlug, () -> transaction.execute(status -> {
             Book book = access.requireManageable(id, principal);
+            if (changes.version() != null && changes.version() != book.getVersion()) {
+                throw ApiException.versionConflict(book.getVersion());
+            }
             String title = changes.title() != null ? changes.title().trim() : book.getTitle();
             String acronym = changes.acronym() != null ? changes.acronym() : book.getAcronym();
             String slug = Book.slugFor(acronym, title);
@@ -93,7 +102,7 @@ public class BookService {
                 book.updateSynopsis(changes.synopsis().trim());
             }
             if (changes.releaseFrequency() != null) {
-                book.updateReleaseFrequency(blankToNull(changes.releaseFrequency()));
+                book.updateReleaseFrequency(Texts.blankToNull(changes.releaseFrequency()));
             }
             if (changes.status() != null) {
                 book.updateStatus(changes.status());
@@ -124,6 +133,10 @@ public class BookService {
         }
         if (confirmTitle == null || !confirmTitle.trim().equals(book.getTitle())) {
             throw ApiException.badRequest("TITLE_CONFIRMATION_MISMATCH", "O título informado não confere.");
+        }
+        if (!book.getAuthor().getId().equals(principal.id())) {
+            audit.record(principal.id(), "BOOK_DELETED", "books/" + id, Map.of("title", book.getTitle(), "slug", book.getSlug(),
+                    "authorId", book.getAuthor().getId()));
         }
         books.delete(book);
     }
@@ -166,9 +179,5 @@ public class BookService {
 
     private static ApiException slugTaken() {
         return ApiException.conflict("BOOK_SLUG_TAKEN", "Já existe uma obra com esta sigla e este título. Escolha outra sigla.");
-    }
-
-    private static String blankToNull(String text) {
-        return text == null || text.isBlank() ? null : text.trim();
     }
 }

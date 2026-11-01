@@ -5,7 +5,6 @@ import br.com.readowl.readowl.notification.infrastructure.NotificationQueue.Pend
 import br.com.readowl.readowl.shared.config.ReadowlProperties;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.springframework.mail.MailException;
 import org.springframework.mail.MailSender;
 import org.springframework.mail.SimpleMailMessage;
 import org.springframework.scheduling.annotation.Scheduled;
@@ -60,12 +59,9 @@ public class NotificationWorker {
 
     public void deliverEmails() {
         for (int batch = 0; batch < MAX_EMAIL_BATCHES_PER_RUN; batch++) {
-            Integer sent = transaction.execute(status -> {
-                List<PendingEmail> emails = queue.claimEmails(EMAIL_BATCH_SIZE);
-                emails.forEach(this::deliver);
-                return emails.size();
-            });
-            if (sent == null || sent < EMAIL_BATCH_SIZE) {
+            List<PendingEmail> emails = queue.claimEmails(EMAIL_BATCH_SIZE);
+            emails.forEach(this::deliver);
+            if (emails.size() < EMAIL_BATCH_SIZE) {
                 return;
             }
         }
@@ -105,7 +101,8 @@ public class NotificationWorker {
     }
 
     /**
-     * Pode repetir um e-mail se a aplicação cair entre o envio e o commit. Perder o aviso seria pior.
+     * Fora de transação: um SMTP lento não pode prender conexões do banco, e a falha de um e-mail não afeta os
+     * outros. Pode repetir um e-mail se a aplicação cair entre o envio e a gravação. Perder o aviso seria pior.
      */
     private void deliver(PendingEmail email) {
         if (!email.deliverable()) {
@@ -114,12 +111,13 @@ public class NotificationWorker {
         }
         try {
             mailSender.send(message(email));
-            queue.markEmail(email.id(), "SENT");
-        } catch (MailException ex) {
+        } catch (RuntimeException ex) {
             // Sem o endereço ou a mensagem da exceção, que pode citar o destinatário.
             log.warn("Falha ao enviar e-mail de novo capitulo: id={}, causa={}", email.id(), ex.getClass().getSimpleName());
             queue.recordEmailFailure(email.id(), ex.getClass().getSimpleName(), MAX_ATTEMPTS);
+            return;
         }
+        queue.markEmail(email.id(), "SENT");
     }
 
     /**

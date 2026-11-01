@@ -12,9 +12,12 @@ import br.com.readowl.readowl.user.application.SessionUser;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import jakarta.validation.Valid;
+import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
+import org.springframework.http.ResponseCookie;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.security.web.csrf.CsrfToken;
+import org.springframework.web.bind.annotation.CookieValue;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
@@ -22,9 +25,14 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestController;
 
+import java.time.Duration;
+
 @RestController
 @RequestMapping("/api/v1/auth")
 class AuthController {
+
+    private static final String DEVICE_COOKIE = "READOWL_DEVICE";
+    private static final Duration DEVICE_COOKIE_MAX_AGE = Duration.ofDays(90);
 
     private final RegistrationService registration;
     private final LoginService login;
@@ -69,11 +77,28 @@ class AuthController {
     }
 
     @PostMapping("/login")
-    SessionResponse login(@Valid @RequestBody LoginRequest body, HttpServletRequest request,
-                          HttpServletResponse response) {
-        SessionUser user = login.authenticate(body.email(), body.password(), ClientAddress.of(request));
-        sessions.establish(user, request, response);
-        return login.describe(user);
+    SessionResponse login(@Valid @RequestBody LoginRequest body,
+                          @CookieValue(name = DEVICE_COOKIE, required = false) String deviceToken,
+                          HttpServletRequest request, HttpServletResponse response) {
+        LoginService.LoginResult result = login.authenticate(body.email(), body.password(), ClientAddress.of(request), deviceToken);
+        sessions.establish(result.user(), request, response);
+        if (result.newDeviceToken() != null) {
+            response.addHeader(HttpHeaders.SET_COOKIE, deviceCookie(result.newDeviceToken(), request).toString());
+        }
+        return login.describe(result.user());
+    }
+
+    /**
+     * Só vai para a rota de login e não identifica ninguém sem o e-mail e a senha.
+     */
+    private static ResponseCookie deviceCookie(String token, HttpServletRequest request) {
+        return ResponseCookie.from(DEVICE_COOKIE, token)
+                .httpOnly(true)
+                .secure(request.isSecure())
+                .sameSite("Strict")
+                .path("/api/v1/auth/login")
+                .maxAge(DEVICE_COOKIE_MAX_AGE)
+                .build();
     }
 
     @GetMapping("/session")

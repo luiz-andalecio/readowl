@@ -2,6 +2,8 @@ package br.com.readowl.readowl.publishing.infrastructure;
 
 import br.com.readowl.readowl.publishing.domain.Chapter;
 import br.com.readowl.readowl.publishing.domain.ChapterState;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.EntityGraph;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
@@ -21,17 +23,48 @@ public interface ChapterRepository extends JpaRepository<Chapter, UUID> {
                                Instant publishedAt) {
     }
 
+    record PublishedVolumeRow(UUID id, String title) {
+    }
+
+    record ChapterSlugRow(UUID id, String slug) {
+    }
+
     /**
      * Ordem de leitura: primeiro os capítulos sem volume, depois cada volume em ordem.
      */
-    @Query("""
+    @Query(value = """
             select new br.com.readowl.readowl.publishing.infrastructure.ChapterRepository$PublishedChapterRow(
                 c.id, c.title, c.slug, v.id, v.title, r.createdAt)
             from Chapter c left join c.volume v join c.publishedRevision r
             where c.book.id = :bookId and c.state = br.com.readowl.readowl.publishing.domain.ChapterState.PUBLISHED
             order by v.displayOrder asc nulls first, c.displayOrder asc
+            """, countQuery = """
+            select count(c) from Chapter c
+            where c.book.id = :bookId and c.state = br.com.readowl.readowl.publishing.domain.ChapterState.PUBLISHED
             """)
-    List<PublishedChapterRow> findPublishedRows(UUID bookId);
+    Page<PublishedChapterRow> findPublishedRows(UUID bookId, Pageable pageable);
+
+    /**
+     * Volumes sem capítulos publicados podem ter títulos ainda privados.
+     */
+    @Query("""
+            select new br.com.readowl.readowl.publishing.infrastructure.ChapterRepository$PublishedVolumeRow(v.id, v.title)
+            from Volume v
+            where v.book.id = :bookId and exists (
+                select 1 from Chapter c
+                where c.volume = v and c.state = br.com.readowl.readowl.publishing.domain.ChapterState.PUBLISHED)
+            order by v.displayOrder asc
+            """)
+    List<PublishedVolumeRow> findPublishedVolumes(UUID bookId);
+
+    /**
+     * Os slugs que poderiam colidir com um novo: o próprio e os numerados a partir dele.
+     */
+    @Query("""
+            select new br.com.readowl.readowl.publishing.infrastructure.ChapterRepository$ChapterSlugRow(c.id, c.slug)
+            from Chapter c where c.book.id = :bookId and (c.slug = :slug or c.slug like :numberedSlug)
+            """)
+    List<ChapterSlugRow> findSimilarSlugs(UUID bookId, String slug, String numberedSlug);
 
     /**
      * Capítulo para leitura: só o HTML da revisão, que também guarda o documento e o texto puro.
@@ -64,10 +97,6 @@ public interface ChapterRepository extends JpaRepository<Chapter, UUID> {
     List<Chapter> findByBookIdAndVolumeIsNull(UUID bookId);
 
     boolean existsByVolumeId(UUID volumeId);
-
-    boolean existsByBookIdAndSlug(UUID bookId, String slug);
-
-    boolean existsByBookIdAndSlugAndIdNot(UUID bookId, String slug, UUID id);
 
     @Query("select c.book.id from Chapter c where c.id = :id")
     Optional<UUID> findBookIdById(UUID id);

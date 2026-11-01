@@ -10,7 +10,9 @@ import br.com.readowl.readowl.publishing.domain.ChapterDraft;
 import br.com.readowl.readowl.publishing.domain.Volume;
 import br.com.readowl.readowl.publishing.infrastructure.ChapterDraftRepository;
 import br.com.readowl.readowl.publishing.infrastructure.ChapterRepository;
+import br.com.readowl.readowl.publishing.infrastructure.ChapterRepository.ChapterSlugRow;
 import br.com.readowl.readowl.publishing.infrastructure.VolumeRepository;
+import br.com.readowl.readowl.shared.audit.AuditTrail;
 import br.com.readowl.readowl.shared.config.ReadowlProperties;
 import br.com.readowl.readowl.shared.exception.ApiException;
 import br.com.readowl.readowl.shared.text.Slugs;
@@ -42,15 +44,18 @@ public class BookStructureService {
     private final ChapterRepository chapters;
     private final ChapterDraftRepository drafts;
     private final ReadowlProperties.Limits limits;
+    private final AuditTrail audit;
 
     BookStructureService(BookAccess bookAccess, ChapterAccess chapterAccess, VolumeRepository volumes,
-                         ChapterRepository chapters, ChapterDraftRepository drafts, ReadowlProperties properties) {
+                         ChapterRepository chapters, ChapterDraftRepository drafts, ReadowlProperties properties,
+                         AuditTrail audit) {
         this.bookAccess = bookAccess;
         this.chapterAccess = chapterAccess;
         this.volumes = volumes;
         this.chapters = chapters;
         this.drafts = drafts;
         this.limits = properties.limits();
+        this.audit = audit;
     }
 
     @Transactional(readOnly = true)
@@ -70,8 +75,11 @@ public class BookStructureService {
         return VolumeView.from(volumes.saveAndFlush(new Volume(book, title.trim(), volumes.findMaxOrder(bookId) + 1)));
     }
 
-    public VolumeView renameVolume(UUID volumeId, String title, SessionUser principal) {
+    public VolumeView renameVolume(UUID volumeId, String title, Long version, SessionUser principal) {
         Volume volume = chapterAccess.requireManageableVolumeLocked(volumeId, principal);
+        if (version != null && version != volume.getVersion()) {
+            throw ApiException.versionConflict(volume.getVersion());
+        }
         volume.rename(title.trim());
         return VolumeView.from(volumes.saveAndFlush(volume));
     }
@@ -120,8 +128,11 @@ public class BookStructureService {
         return ChapterView.from(chapter);
     }
 
-    public ChapterView renameChapter(UUID chapterId, String title, SessionUser principal) {
+    public ChapterView renameChapter(UUID chapterId, String title, Long version, SessionUser principal) {
         Chapter chapter = chapterAccess.requireManageableLocked(chapterId, principal);
+        if (version != null && version != chapter.getVersion()) {
+            throw ApiException.versionConflict(chapter.getVersion());
+        }
         String cleanTitle = title.trim();
         if (!cleanTitle.equals(chapter.getTitle())) {
             chapter.rename(cleanTitle, uniqueSlug(chapter.getBook().getId(), cleanTitle, chapterId));
@@ -140,6 +151,11 @@ public class BookStructureService {
         }
         if (chapter.isPublished()) {
             throw ApiException.conflict("CHAPTER_PUBLISHED", "Despublique o capítulo antes de excluí-lo.");
+        }
+        Book book = chapter.getBook();
+        if (!book.getAuthor().getId().equals(principal.id())) {
+            audit.record(principal.id(), "CHAPTER_DELETED", "chapters/" + chapterId, Map.of("title", chapter.getTitle(),
+                    "slug", chapter.getSlug(), "bookId", book.getId()));
         }
         chapters.delete(chapter);
     }
@@ -186,17 +202,15 @@ public class BookStructureService {
     private String uniqueSlug(UUID bookId, String title, UUID chapterId) {
         String slug = Slugs.slugify(title);
         String base = slug.isEmpty() ? DEFAULT_CHAPTER_SLUG : slug;
+        Set<String> taken = chapters.findSimilarSlugs(bookId, base, base + "-%").stream()
+                .filter(row -> !row.id().equals(chapterId))
+                .map(ChapterSlugRow::slug)
+                .collect(Collectors.toSet());
         String candidate = base;
-        for (int suffix = 2; slugTaken(bookId, candidate, chapterId); suffix++) {
+        for (int suffix = 2; taken.contains(candidate); suffix++) {
             candidate = base + "-" + suffix;
         }
         return candidate;
-    }
-
-    private boolean slugTaken(UUID bookId, String slug, UUID chapterId) {
-        return chapterId == null
-                ? chapters.existsByBookIdAndSlug(bookId, slug)
-                : chapters.existsByBookIdAndSlugAndIdNot(bookId, slug, chapterId);
     }
 
     private static ApiException invalidOrder(String detail) {
