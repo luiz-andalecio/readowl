@@ -3,6 +3,7 @@ package br.com.readowl.readowl.auth.application;
 import br.com.readowl.readowl.shared.security.SessionAccessCheck;
 import br.com.readowl.readowl.user.application.SessionUser;
 import br.com.readowl.readowl.user.application.UserService;
+import br.com.readowl.readowl.user.domain.Role;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import jakarta.servlet.http.HttpSession;
@@ -26,6 +27,11 @@ class AccountSessionCheck implements SessionAccessCheck {
     @Override
     public boolean isCurrent(Authentication authentication) {
         return !(authentication.getPrincipal() instanceof SessionUser user) || users.hasAccess(user.id(), user.role());
+    }
+
+    @Override
+    public boolean isPrivileged(Authentication authentication) {
+        return authentication.getPrincipal() instanceof SessionUser user && user.role() != Role.USER;
     }
 
     @Override

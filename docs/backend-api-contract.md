@@ -1512,7 +1512,7 @@ Em produção, o NGINX responde algumas requisições antes de elas chegarem à 
 | Status | `code` | Quando |
 |---|---|---|
 | 413 | `CONTENT_TOO_LARGE` | Corpo acima de 3 MiB |
-| 429 | `RATE_LIMITED` | Acima de 30 requisições por segundo por IP, ou de 2 buscas por segundo em `GET /books?query=`, com uma pequena folga. `Retry-After` informa a espera |
+| 429 | `RATE_LIMITED` | Acima de 30 requisições por segundo por IP, de 50 conexões abertas, de 2 buscas por segundo em `GET /books?query=` ou de 2 tentativas por segundo em login, cadastro e links de e-mail, com uma pequena folga. `Retry-After` informa a espera |
 | 503 | `TEMPORARILY_UNAVAILABLE` | Aplicação fora do ar, como durante uma implantação. `Retry-After` informa a espera |
 
 ### Demais rotas

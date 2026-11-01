@@ -70,8 +70,9 @@ public class CatalogService {
         Filter filter = new Filter(query, search.genreIds(), search.tags(), search.status(),
                 author == null ? null : User.normalizeUsername(author), PublicBooks.viewerIsLoggedIn());
 
-        long total = queries.count(filter);
-        List<Row> rows = queries.find(filter, ordering, search.size(), (long) search.page() * search.size());
+        CatalogQueries.Result result = queries.find(filter, ordering, search.size(), (long) search.page() * search.size());
+        List<Row> rows = result.rows();
+        long total = result.total();
         List<UUID> ids = rows.stream().map(Row::id).toList();
         Map<UUID, List<TaxonomyItem>> genres = queries.genresOf(ids);
         Map<UUID, List<TaxonomyItem>> tags = queries.tagsOf(ids);

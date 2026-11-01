@@ -33,13 +33,13 @@ public class CatalogQueries {
             """;
     private static final String QUERY_FILTER = """
              AND (b.search_vector @@ websearch_to_tsquery('portuguese', immutable_unaccent(:query))
-                  OR immutable_unaccent(lower(b.title)) LIKE '%' || immutable_unaccent(lower(:likeQuery)) || '%' ESCAPE '\\'
-                  OR immutable_unaccent(lower(:query)) <% immutable_unaccent(lower(b.title))
+                  OR b.search_title LIKE '%' || immutable_unaccent(lower(:likeQuery)) || '%' ESCAPE '\\'
+                  OR immutable_unaccent(lower(:query)) <% b.search_title
                   OR b.acronym = upper(:query))
             """;
     private static final String RELEVANCE = """
             ts_rank(b.search_vector, websearch_to_tsquery('portuguese', immutable_unaccent(:query)))
-                + word_similarity(immutable_unaccent(lower(:query)), immutable_unaccent(lower(b.title)))
+                + word_similarity(immutable_unaccent(lower(:query)), b.search_title)
                 + CASE WHEN b.acronym = upper(:query) THEN 1 ELSE 0 END
             """;
 
@@ -76,25 +76,45 @@ public class CatalogQueries {
                       Instant lastChapterPublishedAt, Instant createdAt) {
     }
 
-    public long count(Filter filter) {
+    public record Result(List<Row> rows, long total) {
+    }
+
+    private long count(Filter filter) {
         MapSqlParameterSource parameters = new MapSqlParameterSource();
         String sql = "SELECT count(*) " + FROM + conditions(filter, parameters);
         Long total = jdbc.queryForObject(sql, parameters, Long.class);
         return total == null ? 0 : total;
     }
 
-    public List<Row> find(Filter filter, Ordering ordering, int limit, long offset) {
+    /**
+     * Ordenar por relevância já percorre todas as candidatas, então o total sai da mesma consulta, em vez de repetir o
+     * trabalho. As demais ordenações usam um índice e param no fim da página: para elas, contar à parte é mais barato.
+     */
+    public Result find(Filter filter, Ordering ordering, int limit, long offset) {
         MapSqlParameterSource parameters = new MapSqlParameterSource()
                 .addValue("limit", limit)
                 .addValue("offset", offset);
         String order = ordering == Ordering.RELEVANCE_DESC ? "(" + RELEVANCE + ") DESC" : ordering.sql;
+        // Em duas fases: acha só os IDs da página e depois lê o resto deles. Assim, ordenar não carrega a sinopse de cada
+        // candidata, nem conta os capítulos das obras que OFFSET pula.
+        boolean countedTogether = ordering == Ordering.RELEVANCE_DESC;
         String sql = """
                 SELECT b.id, b.title, b.acronym, b.slug, b.synopsis, b.status, b.content_rating, b.view_count,
                        b.last_chapter_published_at, b.created_at, u.username, u.name,
                        (SELECT count(*) FROM chapters c WHERE c.book_id = b.id AND c.state = 'PUBLISHED') AS published_chapters
-                """ + FROM + conditions(filter, parameters)
-                + " ORDER BY " + order + ", b.id LIMIT :limit OFFSET :offset";
-        return jdbc.query(sql, parameters, CatalogQueries::row);
+                """ + (countedTogether ? ", page.total" : "") + " FROM (SELECT b.id" + (countedTogether ? ", count(*) OVER () AS total " : " ") + FROM + conditions(filter, parameters)
+                + " ORDER BY " + order + ", b.id LIMIT :limit OFFSET :offset) page"
+                + " JOIN books b ON b.id = page.id JOIN users u ON u.id = b.author_id"
+                + " ORDER BY " + order + ", b.id";
+        long[] total = {-1};
+        List<Row> rows = jdbc.query(sql, parameters, (rs, rowNumber) -> {
+            if (countedTogether) {
+                total[0] = rs.getLong("total");
+            }
+            return row(rs, rowNumber);
+        });
+        // Sem linhas, como em uma página depois da última, a consulta não diz o total.
+        return new Result(rows, total[0] >= 0 ? total[0] : count(filter));
     }
 
     public Map<UUID, List<TaxonomyItem>> genresOf(Collection<UUID> bookIds) {

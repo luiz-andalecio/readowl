@@ -75,6 +75,28 @@ class CatalogIntegrationTest {
         return new LinkedHashMap<>(books.newBook(title, uniqueAcronym()));
     }
 
+    @Test
+    void aSearchReportsTheSameTotalOnEveryPageAndPastTheLast() {
+        Author author = newAuthor();
+        String word = "xpto" + UUID.randomUUID().toString().substring(0, 8);
+        for (int book = 0; book < 3; book++) {
+            books.publishedBook(author.client(), book(word + " volume " + book));
+        }
+        String search = CATALOG + "?query=" + word + "&size=2";
+
+        var first = anonymous.get(search + "&page=0").json();
+        var second = anonymous.get(search + "&page=1").json();
+        var past = anonymous.get(search + "&page=5").json();
+
+        assertThat(first.at("/content")).hasSize(2);
+        assertThat(first.at("/totalElements").asLong()).isEqualTo(3);
+        assertThat(first.at("/totalPages").asInt()).isEqualTo(2);
+        assertThat(second.at("/content")).hasSize(1);
+        assertThat(second.at("/totalElements").asLong()).isEqualTo(3);
+        assertThat(past.at("/content")).isEmpty();
+        assertThat(past.at("/totalElements").asLong()).isEqualTo(3);
+    }
+
     private List<String> titles(String queryString) {
         ApiClient.Response response = anonymous.get(CATALOG + "?" + queryString);
         assertThat(response.status()).isEqualTo(200);
@@ -298,12 +320,12 @@ class CatalogIntegrationTest {
             return jdbc.queryForList("""
                     EXPLAIN SELECT id FROM books
                     WHERE search_vector @@ websearch_to_tsquery('portuguese', immutable_unaccent('aura'))
-                       OR immutable_unaccent(lower(title)) LIKE '%aura%'
+                       OR search_title LIKE '%aura%'
                        OR acronym = 'AURA'
                     """, String.class);
         });
 
         assertThat(String.join("\n", plan))
-                .contains("ix_books_search").contains("ix_books_title_trgm").contains("ix_books_acronym");
+                .contains("ix_books_search").contains("ix_books_search_title_trgm").contains("ix_books_acronym");
     }
 }

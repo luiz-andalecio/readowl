@@ -145,6 +145,10 @@ O relatório fica em `target/site/jacoco/index.html`. Use-o para encontrar o que
 DB_ADMIN_USER=postgres DB_ADMIN_PASSWORD=... PSQL='/c/Program Files/PostgreSQL/18/bin/psql.exe' JAVA="$JAVA_HOME/bin/java" sh scripts/smoke-test.sh
 ```
 
+### Teste de carga
+
+`scripts/load/run.sh` mede o JAR de produção com dados sintéticos, em um banco próprio, sem instalar nada além do JDK. Instruções no próprio script. Os resultados e as decisões que eles motivaram estão em [`docs/operations-runbook.md`](../../docs/operations-runbook.md#capacidade).
+
 ### Testes
 
 Os testes de integração usam PostgreSQL real, de duas formas:
@@ -263,7 +267,7 @@ As dependências seguem uma direção, sem ciclos: `publishing` e `library` conh
 - **Visibilidade:** `PublicBooks` é o único ponto que decide se uma obra é pública: publicada e de autor não suspenso. As rotas públicas valem igualmente para todos.
 - **Busca:** combina texto completo em português (`search_vector`, com peso maior no título), trechos e similaridade no título (`pg_trgm`) e a sigla. Ignora acentos por `immutable_unaccent`.
 - **Extensões:** a migration `V9` cria `unaccent` e `pg_trgm`. Como são extensões confiáveis, basta o usuário da aplicação ser dono do banco.
-- **Consulta do catálogo:** `CatalogQueries` usa SQL porque os filtros são combináveis. Valores vão sempre como parâmetros, e a ordenação vem de uma lista fixa. Fica em `publishing`, e não em `book`, porque também conta capítulos publicados.
+- **Consulta do catálogo:** `CatalogQueries` usa SQL porque os filtros são combináveis. Acha só os IDs da página e depois lê o resto deles, para não ordenar linhas largas. Numa busca, o total sai da mesma consulta. Valores vão sempre como parâmetros, e a ordenação vem de uma lista fixa. Fica em `publishing`, e não em `book`, porque também conta capítulos publicados.
 
 ### Comunidade
 
@@ -296,7 +300,7 @@ Imagem em [`Dockerfile`](Dockerfile), ambiente em [`infra/`](../../infra/) e pro
 - **Proxy:** o perfil `prod` só aceita `X-Forwarded-For` e `X-Forwarded-Proto` de conexões vindas de `TRUSTED_PROXIES`, e ignora os de qualquer outra origem. O cliente é o último endereço da lista que não é um proxy confiável, então tanto `$remote_addr` quanto `$proxy_add_x_forwarded_for` são seguros no NGINX. **Um valor errado em `TRUSTED_PROXIES` faz todos os clientes parecerem um só, o endereço do proxy, e dispara os limites por IP.**
 - **Limites por IP:** `ClientAddress` é o único ponto que decide quem é o cliente. Um bloco IPv6 `/64` conta como um único cliente.
 - **Login:** cada IP só gasta uma parte do limite da conta, e um login correto zera as tentativas. Um ataque a partir de 10 IPs ainda esgota esse limite, que protege a senha, mas não afeta navegadores em que a conta já entrou (`known_devices`, cookie `READOWL_DEVICE`). Em outro navegador, recuperar a senha libera o acesso.
-- **Sessões:** escritas e rotas administrativas conferem papel e status no banco a cada requisição, para o caso de a revogação ter falhado. Um atributo de sessão ilegível conta como ausente, e a pessoa só precisa entrar de novo. A sessão criada para iniciar o login com Google vale 10 minutos, e esse início tem limite por IP.
+- **Sessões:** escritas, rotas administrativas e toda requisição de quem tem papel de moderação ou administração conferem papel e status no banco, para o caso de a revogação ter falhado. Tirar o papel de alguém vale na requisição seguinte, inclusive nas leituras de rascunhos. Por isso a autenticação fica em sessões no servidor, e não em JWT, que continuaria válido até expirar. Um atributo de sessão ilegível conta como ausente, e a pessoa só precisa entrar de novo. A sessão criada para iniciar o login com Google vale 10 minutos, e esse início tem limite por IP.
 - **Tempos máximos:** 5 s de espera por conexão, 30 s por comando e 60 s de transação parada, definidos na conexão. `beforeEachMigrate.sql` libera as migrations, e `NotificationQueue.fanOut` libera o envio a muitos seguidores. **Migrations com `CREATE INDEX CONCURRENTLY` ficam fora de transação e precisam definir o próprio tempo.**
 - **E-mail:** a aplicação testa a conexão com o SMTP ao subir e registra `ERROR` se falhar, sem impedir a inicialização.
 - **Cache:** `@PublicCache` marca as rotas públicas de leitura, com validade curta. As demais continuam com `no-store`.

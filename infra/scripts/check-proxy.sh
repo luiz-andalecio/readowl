@@ -91,6 +91,13 @@ if [ -n "${MAILPIT_URL:-}" ]; then
     contains 'e-mail de confirmação entregue' "$MAIL_TO" "$($CURL "$MAILPIT_URL/api/v1/search?query=to:$MAIL_TO")"
 fi
 
+# O cache público: a segunda leitura vem dele, e quem tem sessão nunca passa por ele.
+$CURL --output /dev/null "$BASE_URL/api/v1/genres"
+contains 'leitura pública vem do cache' 'x-cache-status: hit' "$(headers "$BASE_URL/api/v1/genres" | tr '[:upper:]' '[:lower:]')"
+absent 'sessão não usa o cache' 'x-cache-status: hit' "$(headers -H 'Cookie: __Host-SESSION=qualquer' "$BASE_URL/api/v1/genres" | tr '[:upper:]' '[:lower:]')"
+check 'rota privada nunca vai para o cache' '401' "$(status "$BASE_URL/api/v1/users/me")"
+absent 'erro sem cache' 'x-cache-status: hit' "$(headers "$BASE_URL/api/v1/users/me" | tr '[:upper:]' '[:lower:]')"
+
 # Um corpo acima do limite recusado pelo próprio NGINX.
 head -c 3200000 /dev/zero | tr '\0' 'a' > "$WORK/big"
 check 'corpo grande recusado' '413' "$($CURL --output "$WORK/too-large" --write-out '%{http_code}' -X POST \
@@ -108,6 +115,14 @@ LIMITED="$($CURL --dump-header "$WORK/limit-headers" "$BASE_URL/api/v1/books?que
 contains 'limite no formato da API' '"code":"RATE_LIMITED"' "$LIMITED"
 contains 'limite informa a espera' 'retry-after: 1' "$(tr '[:upper:]' '[:lower:]' < "$WORK/limit-headers")"
 check 'o catálogo sem busca não sofre o limite da busca' '200' "$(status "$BASE_URL/api/v1/books")"
+
+# Tentativas de login em paralelo, além da folga de 10: o proxy recusa antes de chegarem à aplicação.
+for attempt in $(seq 1 30); do
+    $CURL --output /dev/null --write-out '%{http_code}\n' -X POST -H 'Content-Type: application/json' -d '{}' \
+        "$BASE_URL/api/v1/auth/login" >> "$WORK/logins" &
+done
+wait
+contains 'tentativas de login limitadas no proxy' '429' "$(cat "$WORK/logins")"
 
 if [ "$FAILURES" -gt 0 ]; then
     echo "$FAILURES verificação(ões) falharam."

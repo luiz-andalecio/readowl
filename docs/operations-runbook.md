@@ -167,12 +167,43 @@ Limites atingidos no NGINX aparecem no log de acesso com status 429.
 
 Os links enviados por e-mail levam o token no fragmento da URL (`#token=`), que o navegador não envia ao servidor. Por isso, ele não aparece nesses logs nem no `Referer`.
 
+## Capacidade
+
+[`scripts/load/run.sh`](../backend/readowl/scripts/load/run.sh) mede o JAR de produção com um banco de dados sintéticos: 20 mil contas, 5 mil obras, 50 mil capítulos e 150 mil comentários, 100 mil deles em uma única obra, seguida por 20 mil contas. Simula leitores anônimos, leitores logados que consultam as notificações a cada 30 segundos, pessoas comentando e o lançamento de um capítulo.
+
+**Medido em 01/11/2026**, com 60 segundos de aquecimento e 40 de medida, e cada usuário fazendo um pedido a cada 5 a 15 segundos. A aplicação foi limitada a 2 CPUs e 700 MiB, com pool de 10 conexões.
+
+| Usuários | Pedidos/s | p95 do catálogo | p95 do capítulo | p95 da busca | Fila do pool | Erros 5xx |
+|---|---:|---:|---:|---:|---:|---:|
+| 1.220 | 130 | 54 ms | 33 ms | 1.127 ms | 2 | 0 |
+| 1.830 | 196 | 81 ms | 75 ms | 1.055 ms | 44 | 0 |
+| 2.440 | 253 | 1.974 ms | 2.029 ms | 3.164 ms | 190 | 5 em 10.117 |
+
+Com 1.830 usuários, o lançamento de um capítulo levou 76 ms para publicar e avisou os 20 mil seguidores, sem erros. A aplicação usou no máximo 334 MiB de heap.
+
+> **Limites destes números.** Foram medidos em uma máquina de desenvolvimento, com o banco e o gerador de carga dividindo os mesmos 8 núcleos, e variam bastante entre rodadas. Não passam pelo NGINX, então não incluem o cache de leituras públicas, que deve aliviar bastante os visitantes, nem os limites por IP. O texto dos capítulos comprime melhor que um real. A busca usa de propósito uma palavra presente em todos os títulos, o pior caso. **Repita em um servidor igual ao de produção antes de usar para dimensionar.**
+
+### O que as medidas decidiram
+
+| Item | Decisão | Motivo |
+|---|---|---|
+| Consultas do catálogo e da busca | Reescritas | Eram o gargalo. Com 1.220 usuários, o p95 do catálogo caiu de 1.862 ms para 54 ms, e com 2.440 os erros caíram de 160 para 5, com o dobro de vazão |
+| Tamanho do pool | Mantido em 10 | Com 20 conexões não houve ganho consistente: o limite era o trabalho do banco, não a falta de conexões |
+| Custo da sessão | Sem mudança | Cerca de 100 atualizações por segundo com 330 pessoas logadas, sem aparecer entre as consultas mais vistas. Nenhuma é HOT, porque o `EXPIRY_TIME` tem índice, mas a tabela ficou em menos de 1 MiB. Se pesar com muito mais gente logada, aumente o intervalo das consultas de notificações antes de qualquer outra mudança |
+| Contagem de comentários | Sem mudança | Na obra com 100 mil comentários, a lista levou de 110 ms a 290 ms, um valor aceitável para esse volume |
+
+Acima da capacidade, a aplicação responde 503 `TEMPORARILY_UNAVAILABLE` depois de 5 segundos sem conexão livre, em vez de acumular pedidos: é o comportamento esperado.
+
 ## Limites do NGINX
 
 | Rota | Limite por IP | Folga |
 |---|---|---|
 | `/api/`, `/oauth2/`, `/login/oauth2/` | 30 por segundo | 60 |
 | `/api/v1/books` com `query` | 2 por segundo, além do anterior | 8 |
+| Login, cadastro, links de e-mail | 2 por segundo, além do primeiro | 10 |
+| Conexões abertas ao mesmo tempo | 50 | - |
 | Corpo da requisição | 3 MiB | - |
+
+Respostas públicas ficam no cache do NGINX pelo tempo que a aplicação indicar, de 30 segundos na maioria das rotas, e `X-Cache-Status` mostra o resultado. Quem tem sessão nunca usa esse cache. Conteúdo tirado do ar pode continuar visível por esse tempo, ou por mais alguns segundos se a aplicação estiver fora do ar, porque o cache serve a cópia vencida nesse caso.
 
 Um bloco IPv6 `/64` conta como um cliente. **Se o SSR do frontend chamar a API por este NGINX, todas as visitas contarão como um único IP.** Nesse caso, ele deve chamar a aplicação pela rede interna, e não pelo endereço público.

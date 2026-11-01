@@ -17,10 +17,25 @@ map $arg_query $search_key {
 }
 
 limit_req_zone $client_key zone=api:10m rate=30r/s;
+# Entrada, cadastro e links de e-mail: a aplicação tem limites próprios, mas cada recusa dela ainda escreve no banco.
+limit_req_zone $client_key zone=auth:10m rate=2r/s;
+# Conexões abertas ao mesmo tempo por cliente, contra quem as segura de propósito para esgotar o servidor.
+limit_conn_zone $client_key zone=connections:10m;
 limit_req_zone $search_key zone=search:10m rate=2r/s;
 limit_req_status 429;
 # O log de erros traz a URL e o Referer. Um limite atingido aparece no log de acesso, com status 429.
 limit_req_log_level notice;
+limit_conn_status 429;
+limit_conn_log_level notice;
+
+# Guarda o que a aplicação marca como público (Cache-Control), e absorve picos como o lançamento de um capítulo.
+proxy_cache_path /tmp/nginx-cache levels=1:2 keys_zone=public_reads:10m max_size=256m inactive=10m use_temp_path=off;
+
+# Quem tem sessão pode ver obras adultas: nunca lê nem grava neste cache.
+map $http_cookie $has_session {
+    "~*(^|;\s*)__Host-SESSION=" 1;
+    default 0;
+}
 
 # Sem query string, Referer e cookies, que podem trazer termos de busca e dados pessoais.
 log_format readowl escape=json
@@ -71,6 +86,8 @@ server {
     access_log /dev/stdout readowl;
     error_log /dev/stderr error;
 
+    limit_conn connections 50;
+
     # A aplicação recusa JSON acima de 3 MiB ao ler. Aqui o corpo nem chega a ela.
     client_max_body_size 3m;
     client_header_timeout 10s;
@@ -106,8 +123,25 @@ server {
     error_page 413 @too_large;
     error_page 502 503 504 @unavailable;
 
+    proxy_cache_key $request_method$request_uri;
+    proxy_cache_lock on;
+    proxy_cache_lock_timeout 5s;
+    proxy_cache_use_stale updating error timeout http_502 http_503 http_504;
+    proxy_cache_bypass $has_session;
+    proxy_no_cache $has_session;
+    # Vary: Cookie protege caches de terceiros. Aqui quem tem sessão já não usa o cache, e um cookie CSRF não muda a resposta.
+    proxy_ignore_headers Vary;
+    add_header X-Cache-Status $upstream_cache_status always;
+
     location /api/ {
         limit_req zone=api burst=60 nodelay;
+        proxy_cache public_reads;
+        proxy_pass http://readowl_app;
+    }
+
+    location ~ ^/api/v1/auth/(login|register|verify-email|resend-verification|email/confirm|password/forgot|password/reset)$ {
+        limit_req zone=api burst=60 nodelay;
+        limit_req zone=auth burst=10 nodelay;
         proxy_pass http://readowl_app;
     }
 
@@ -115,6 +149,7 @@ server {
     location = /api/v1/books {
         limit_req zone=api burst=60 nodelay;
         limit_req zone=search burst=8 nodelay;
+        proxy_cache public_reads;
         proxy_pass http://readowl_app;
     }
 

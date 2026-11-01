@@ -76,6 +76,22 @@ class SessionAccessIntegrationTest {
     }
 
     @Test
+    void aRoleLostWithoutEndingTheSessionNoLongerOpensOtherPeoplesContentOnOrdinaryRoutes() {
+        ApiClient author = accounts.loggedIn(verifiedEmail(), PASSWORD);
+        String book = new BookFixtures(jdbc).createBook(author);
+        String email = verifiedEmail();
+        jdbc.update("UPDATE users SET role = 'ADMIN' WHERE email = ?", email);
+        ApiClient admin = accounts.loggedIn(email, PASSWORD);
+        String details = "/api/v1/books/" + book + "/details";
+        assertThat(admin.get(details).status()).isEqualTo(200);
+
+        jdbc.update("UPDATE users SET role = 'USER' WHERE email = ?", email);
+
+        assertThat(admin.get(details).status()).isEqualTo(401);
+        assertThat(admin.get("/api/v1/users/me").status()).as("a sessão foi encerrada").isEqualTo(401);
+    }
+
+    @Test
     void anUnchangedAccountKeepsWorking() {
         ApiClient user = accounts.loggedIn(verifiedEmail(), PASSWORD);
 

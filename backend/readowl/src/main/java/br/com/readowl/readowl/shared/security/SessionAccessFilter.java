@@ -14,8 +14,9 @@ import java.util.Set;
 
 /**
  * Suspender ou trocar o papel de uma conta encerra as sessões dela. Se isso falhar, ou se um login terminar logo
- * depois, a sessão guardaria um papel antigo. Por isso, escritas e rotas administrativas conferem a conta a cada
- * requisição. Leituras comuns não precisam, e não ganham uma consulta a mais.
+ * depois, a sessão guardaria um papel antigo. Por isso, escritas, rotas administrativas e qualquer requisição de quem
+ * tem um papel de moderação ou administração conferem a conta a cada vez: esse papel também abre leituras em rotas comuns,
+ * como rascunhos de outras pessoas. As leituras das demais contas não ganham uma consulta a mais.
  */
 class SessionAccessFilter extends OncePerRequestFilter {
 
@@ -36,7 +37,8 @@ class SessionAccessFilter extends OncePerRequestFilter {
         if (authentication != null) {
             HttpSession session = request.getSession(false);
             boolean expired = session != null && !check.isWithinMaxAge(authentication, session);
-            if (expired || (needsCheck(request) && !check.isCurrent(authentication))) {
+            boolean needsCheck = needsCheck(request) || check.isPrivileged(authentication);
+            if (expired || (needsCheck && !check.isCurrent(authentication))) {
                 check.reject(request, response);
             }
         }

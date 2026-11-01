@@ -13,6 +13,11 @@ public interface SessionAccessCheck {
     boolean isCurrent(Authentication authentication);
 
     /**
+     * A sessão guarda um papel de moderação ou administração, que dá acesso a conteúdo de outras pessoas.
+     */
+    boolean isPrivileged(Authentication authentication);
+
+    /**
      * A sessão ainda está dentro da duração máxima, que vale mesmo com uso contínuo.
      */
     boolean isWithinMaxAge(Authentication authentication, HttpSession session);
