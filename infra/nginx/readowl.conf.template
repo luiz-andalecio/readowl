@@ -1,0 +1,162 @@
+# Único ponto de entrada. As variáveis ${...} em maiúsculas vêm do Compose; a imagem do NGINX as substitui ao iniciar.
+#
+# A aplicação acredita nos cabeçalhos X-Forwarded-* que saem daqui (TRUSTED_PROXIES), então eles são sempre sobrescritos,
+# nunca repassados do cliente. Com outro balanceador na frente deste NGINX, configure set_real_ip_from para ele, ou todos
+# os clientes parecerão um só e os limites por IP vão disparar.
+
+# Um bloco IPv6 /64 conta como um cliente, como faz ClientAddress na aplicação.
+map $remote_addr $client_key {
+    "~^([0-9a-f]+:[0-9a-f]+:[0-9a-f]+:[0-9a-f]+):" $1;
+    default $remote_addr;
+}
+
+# Chave vazia não conta: o limite da busca só vale para pedidos com o parâmetro query.
+map $arg_query $search_key {
+    "" "";
+    default $client_key;
+}
+
+limit_req_zone $client_key zone=api:10m rate=30r/s;
+limit_req_zone $search_key zone=search:10m rate=2r/s;
+limit_req_status 429;
+# O log de erros traz a URL e o Referer. Um limite atingido aparece no log de acesso, com status 429.
+limit_req_log_level notice;
+
+# Sem query string, Referer e cookies, que podem trazer termos de busca e tokens dos links enviados por e-mail.
+log_format readowl escape=json
+    '{"time":"$time_iso8601","client":"$remote_addr","method":"$request_method","path":"$uri","status":$status,'
+    '"bytes":$body_bytes_sent,"duration":$request_time,"upstream_duration":"$upstream_response_time",'
+    '"correlationId":"$upstream_http_x_correlation_id"}';
+
+upstream readowl_app {
+    server ${APP_UPSTREAM};
+    keepalive 32;
+}
+
+# Verificação de saúde do próprio contêiner, sem TLS e sem depender do nome do site.
+server {
+    listen 127.0.0.1:8082;
+    access_log off;
+    return 200;
+}
+
+# Endereço ou domínio desconhecido não chega à aplicação.
+server {
+    listen 8080 default_server;
+    listen 8443 ssl default_server;
+    ssl_reject_handshake on;
+    return 444;
+}
+
+server {
+    listen 8080;
+    server_name ${SERVER_NAME};
+    access_log off;
+    return 308 ${APP_PUBLIC_URL}$request_uri;
+}
+
+server {
+    listen 8443 ssl;
+    http2 on;
+    server_name ${SERVER_NAME};
+
+    ssl_certificate /etc/nginx/certs/fullchain.pem;
+    ssl_certificate_key /etc/nginx/certs/privkey.pem;
+    ssl_protocols TLSv1.2 TLSv1.3;
+    ssl_session_cache shared:readowl_tls:10m;
+    ssl_session_timeout 1d;
+    ssl_session_tickets off;
+
+    server_tokens off;
+    access_log /dev/stdout readowl;
+    error_log /dev/stderr error;
+
+    # A aplicação recusa JSON acima de 3 MiB ao ler. Aqui o corpo nem chega a ela.
+    client_max_body_size 3m;
+    client_header_timeout 10s;
+    client_body_timeout 15s;
+    send_timeout 30s;
+    keepalive_timeout 30s;
+
+    gzip on;
+    gzip_types application/json application/problem+json;
+    gzip_min_length 1024;
+    gzip_proxied any;
+    gzip_vary on;
+
+    proxy_http_version 1.1;
+    proxy_set_header Connection "";
+    proxy_set_header Host $http_host;
+    proxy_set_header X-Forwarded-For $remote_addr;
+    proxy_set_header X-Forwarded-Proto $scheme;
+    # Valor vazio retira o cabeçalho enviado pelo cliente.
+    proxy_set_header X-Forwarded-Host "";
+    proxy_set_header X-Forwarded-Port "";
+    proxy_set_header X-Forwarded-Prefix "";
+    proxy_set_header Forwarded "";
+    proxy_connect_timeout 5s;
+    # Acima dos 5 s de espera por conexão somados aos 30 s de consulta da aplicação.
+    proxy_read_timeout 40s;
+    proxy_send_timeout 30s;
+    # Um POST não é repetido por conta própria.
+    proxy_next_upstream off;
+
+    # Falhas do próprio NGINX no formato de erro da API. As respostas da aplicação passam sem alteração.
+    error_page 429 @rate_limited;
+    error_page 413 @too_large;
+    error_page 502 503 504 @unavailable;
+
+    location /api/ {
+        limit_req zone=api burst=60 nodelay;
+        proxy_pass http://readowl_app;
+    }
+
+    # O catálogo com busca por similaridade é a rota mais cara e pode saturar as conexões do banco.
+    location = /api/v1/books {
+        limit_req zone=api burst=60 nodelay;
+        limit_req zone=search burst=8 nodelay;
+        proxy_pass http://readowl_app;
+    }
+
+    location /oauth2/ {
+        limit_req zone=api burst=60 nodelay;
+        proxy_pass http://readowl_app;
+    }
+
+    location /login/oauth2/ {
+        limit_req zone=api burst=60 nodelay;
+        proxy_pass http://readowl_app;
+    }
+
+    # Para monitores externos: responde 200 só com a aplicação e o banco no ar, sem detalhes.
+    location = /healthz {
+        access_log off;
+        proxy_pass http://readowl_app/readyz;
+    }
+
+    # O frontend ainda não tem imagem. Quando tiver, é aqui que ele entra.
+    location / {
+        default_type application/problem+json;
+        return 404 '{"title":"Not Found","status":404,"code":"NOT_FOUND","detail":"Recurso não encontrado."}';
+    }
+
+    location @rate_limited {
+        default_type application/problem+json;
+        add_header Retry-After 1 always;
+        add_header Cache-Control no-store always;
+        return 429 '{"title":"Too Many Requests","status":429,"code":"RATE_LIMITED","detail":"Muitas requisições. Aguarde um instante."}';
+    }
+
+    location @too_large {
+        default_type application/problem+json;
+        add_header Cache-Control no-store always;
+        return 413 '{"title":"Content Too Large","status":413,"code":"CONTENT_TOO_LARGE","detail":"O corpo da requisição passa do tamanho máximo."}';
+    }
+
+    location @unavailable {
+        default_type application/problem+json;
+        add_header Retry-After 5 always;
+        add_header Cache-Control no-store always;
+        return 503 '{"title":"Service Unavailable","status":503,"code":"TEMPORARILY_UNAVAILABLE","detail":"Serviço indisponível. Tente novamente em instantes."}';
+    }
+}

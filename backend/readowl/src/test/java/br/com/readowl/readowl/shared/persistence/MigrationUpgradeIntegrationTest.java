@@ -45,6 +45,7 @@ class MigrationUpgradeIntegrationTest {
                 .dataSource(dataSource)
                 .schemas(SCHEMA)
                 .locations("classpath:db/migration")
+                .placeholders(java.util.Map.of("appUser", ""))
                 .target(target)
                 .load();
     }
@@ -129,6 +130,7 @@ class MigrationUpgradeIntegrationTest {
                 .dataSource(dataSource)
                 .schemas(SCHEMA)
                 .locations("classpath:db/timeoutprobe", "classpath:db/migration")
+                .placeholders(java.util.Map.of("appUser", ""))
                 .target("0.1")
                 .load()
                 .migrate();

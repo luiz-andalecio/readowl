@@ -22,7 +22,8 @@ import static org.assertj.core.api.Assertions.assertThat;
  * Perfil de produção recebendo conexões de fora do proxy: os cabeçalhos do cliente não valem nada.
  */
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT,
-        properties = {"TRUSTED_PROXIES=10\\.255\\.255\\.1", "logging.structured.format.console="})
+        properties = {"TRUSTED_PROXIES=10\\.255\\.255\\.1", "logging.structured.format.console=",
+                "spring.flyway.enabled=true", "management.server.port=0"})
 @ActiveProfiles({"test", "prod"})
 @Import({TestDatabaseConfiguration.class, ApiTestConfiguration.class})
 class UntrustedProxyIntegrationTest {
@@ -58,6 +59,6 @@ class UntrustedProxyIntegrationTest {
     void aForgedProtocolIsIgnored() {
         ApiClient.Response csrf = accounts.client().withHeader("X-Forwarded-Proto", "https").get("/api/v1/auth/csrf");
 
-        assertThat(csrf.setCookie("XSRF-TOKEN").orElseThrow()).doesNotContain("Secure");
+        assertThat(csrf.setCookie("__Host-XSRF-TOKEN").orElseThrow()).doesNotContain("Secure");
     }
 }

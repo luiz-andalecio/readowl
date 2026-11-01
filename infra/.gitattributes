@@ -1,0 +1,5 @@
+# Montados dentro de contêineres Linux, mesmo quando o repositório está no Windows.
+*.sh text eol=lf
+*.sql text eol=lf
+*.template text eol=lf
+*.yaml text eol=lf

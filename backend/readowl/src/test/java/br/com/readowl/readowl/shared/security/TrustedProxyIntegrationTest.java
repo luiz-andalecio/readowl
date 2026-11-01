@@ -9,6 +9,7 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.boot.test.web.server.LocalManagementPort;
 import org.springframework.boot.test.web.server.LocalServerPort;
 import org.springframework.context.ApplicationContext;
 import org.springframework.context.annotation.Import;
@@ -28,7 +29,8 @@ import static org.assertj.core.api.Assertions.assertThat;
  * Perfil de produção com a aplicação atrás do proxy, papel que o cliente de teste faz ao conectar de localhost.
  */
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT,
-        properties = {"TRUSTED_PROXIES=127\\.0\\.0\\.1|0:0:0:0:0:0:0:1", "logging.structured.format.console="})
+        properties = {"TRUSTED_PROXIES=127\\.0\\.0\\.1|0:0:0:0:0:0:0:1", "logging.structured.format.console=",
+                "spring.flyway.enabled=true", "management.server.port=0"})
 @ActiveProfiles({"test", "prod"})
 @Import({TestDatabaseConfiguration.class, ApiTestConfiguration.class})
 class TrustedProxyIntegrationTest {
@@ -39,6 +41,9 @@ class TrustedProxyIntegrationTest {
 
     @LocalServerPort
     private int port;
+
+    @LocalManagementPort
+    private int managementPort;
 
     @Autowired
     private RecordingMailSender mail;
@@ -86,7 +91,7 @@ class TrustedProxyIntegrationTest {
     void theProtocolInformedByTheProxyIsUsed() {
         ApiClient.Response csrf = accounts.client().withHeader("X-Forwarded-Proto", "https").get("/api/v1/auth/csrf");
 
-        assertThat(csrf.setCookie("XSRF-TOKEN").orElseThrow()).contains("Secure");
+        assertThat(csrf.setCookie("__Host-XSRF-TOKEN").orElseThrow()).contains("Secure").contains("Path=/");
     }
 
     @Test
@@ -218,16 +223,28 @@ class TrustedProxyIntegrationTest {
     }
 
     @Test
-    void theActuatorOnlyShowsHealthAndNoDetails() {
+    void thePublicPortOnlyShowsProbesAndNoDetails() {
         ApiClient visitor = accounts.client();
 
-        ApiClient.Response health = visitor.get("/actuator/health");
-        assertThat(health.status()).isEqualTo(200);
-        assertThat(health.json().has("components")).isFalse();
-        assertThat(visitor.get("/actuator/health/readiness").status()).isEqualTo(200);
-        assertThat(visitor.get("/actuator/health/liveness").status()).isEqualTo(200);
-        for (String endpoint : List.of("metrics", "env", "beans", "configprops", "loggers", "heapdump", "mappings")) {
+        ApiClient.Response ready = visitor.get("/readyz");
+        assertThat(ready.status()).isEqualTo(200);
+        assertThat(ready.json().has("components")).isFalse();
+        assertThat(visitor.get("/livez").status()).isEqualTo(200);
+        for (String endpoint : List.of("health", "metrics", "env", "beans", "configprops", "loggers", "heapdump", "mappings")) {
             assertThat(visitor.get("/actuator/" + endpoint).status()).as(endpoint).isEqualTo(401);
+        }
+    }
+
+    @Test
+    void theInternalPortOnlyAddsHealthAndMetrics() {
+        ApiClient internal = new ApiClient(managementPort);
+
+        assertThat(internal.get("/actuator/health/readiness").status()).isEqualTo(200);
+        assertThat(internal.get("/actuator/health").json().has("components")).isFalse();
+        assertThat(internal.get("/actuator/metrics/hikaricp.connections.pending").status()).isEqualTo(200);
+        assertThat(internal.get("/actuator/metrics/readowl.account_mail.pending").status()).isEqualTo(200);
+        for (String endpoint : List.of("env", "beans", "configprops", "loggers", "heapdump", "mappings")) {
+            assertThat(internal.get("/actuator/" + endpoint).status()).as(endpoint).isEqualTo(401);
         }
     }
 

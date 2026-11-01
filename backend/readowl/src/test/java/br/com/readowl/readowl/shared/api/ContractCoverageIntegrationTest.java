@@ -30,8 +30,8 @@ class ContractCoverageIntegrationTest {
     private static final Path CONTRACT = Path.of("..", "..", "docs", "backend-api-contract.md");
     private static final String API_PREFIX = "/api/v1";
     private static final Pattern DOCUMENTED_ROUTE = Pattern.compile("`(GET|POST|PUT|PATCH|DELETE) (/[^`?\\s]*)");
-    // Atendidas por filtros, e não por controllers: Actuator e as rotas do Spring Security para login e logout.
-    private static final List<String> OUTSIDE_THE_CONTROLLERS = List.of("/actuator", "/oauth2", "/login/oauth2", "/auth/logout");
+    // Atendidas por filtros, e não por controllers: Actuator, as rotas do Spring Security para login e logout, e o NGINX.
+    private static final List<String> OUTSIDE_THE_CONTROLLERS = List.of("/actuator", "/oauth2", "/login/oauth2", "/auth/logout", "/healthz");
 
     @Autowired
     @Qualifier("requestMappingHandlerMapping")

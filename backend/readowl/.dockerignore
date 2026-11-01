@@ -1,0 +1,7 @@
+# Lista permitida: nada novo entra na imagem por acaso, em especial o .env.
+*
+!.mvn/
+!mvnw
+!pom.xml
+!src/
+src/test/

@@ -25,6 +25,7 @@ public final class ApiClient {
 
     private static final JsonMapper JSON = JsonMapper.builder().build();
     private static final String CSRF_COOKIE = "XSRF-TOKEN";
+    private static final String PRODUCTION_CSRF_COOKIE = "__Host-XSRF-TOKEN";
 
     private final String baseUrl;
     private final CookieManager cookies = new CookieManager(null, CookiePolicy.ACCEPT_ALL);
@@ -112,7 +113,7 @@ public final class ApiClient {
      */
     private synchronized HttpRequest.Builder withCsrf(HttpRequest.Builder request) {
         get("/api/v1/auth/csrf");
-        return request.header("X-XSRF-TOKEN", cookie(CSRF_COOKIE).orElseThrow());
+        return request.header("X-XSRF-TOKEN", cookie(CSRF_COOKIE).or(() -> cookie(PRODUCTION_CSRF_COOKIE)).orElseThrow());
     }
 
     private static HttpRequest.BodyPublisher json(Object body) {

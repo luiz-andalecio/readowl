@@ -1,0 +1,157 @@
+# Base de homologação e produção. O ambiente é configurado pelo arquivo indicado em --env-file: veja .env.example.
+# Em homologação, use infra/homolog.sh, que também acrescenta compose.homolog.yaml.
+name: readowl
+
+x-hardening: &hardening
+  cap_drop: [ALL]
+  security_opt: [no-new-privileges:true]
+  read_only: true
+  restart: unless-stopped
+
+x-database: &database
+  DB_HOST: ${DB_HOST:-postgres}
+  DB_PORT: ${DB_PORT:-5432}
+  DB_NAME: ${DB_NAME:?defina DB_NAME}
+  # Nesta rede interna o tráfego não sai do servidor. Com o banco em outro host, use verify-full e DB_SSL_ROOT_CERT.
+  DB_SSL_MODE: ${DB_SSL_MODE:?defina DB_SSL_MODE}
+  DB_SSL_ROOT_CERT: ${DB_SSL_ROOT_CERT:-}
+  DB_USER: ${DB_USER:?defina DB_USER}
+
+services:
+  postgres:
+    # Mesma versão principal dos testes. O PostgreSQL 18 guarda os dados em /var/lib/postgresql/18/docker.
+    image: postgres:18.6@sha256:3a4264520e121176619f54ff867d12774bc81e95e7b84db58d63bccdb6144b81
+    restart: unless-stopped
+    security_opt: [no-new-privileges:true]
+    command:
+      - postgres
+      - -c
+      - wal_level=replica
+      - -c
+      - archive_mode=on
+      # Cada segmento do WAL vai para a pasta de backups. archive_timeout limita a perda a 5 minutos sem movimento alto.
+      - -c
+      - archive_command=mkdir -p /var/lib/postgresql/backups/wal && test ! -f /var/lib/postgresql/backups/wal/%f && cp %p /var/lib/postgresql/backups/wal/%f
+      - -c
+      - archive_timeout=300
+    environment:
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?defina POSTGRES_PASSWORD}
+      DB_NAME: ${DB_NAME:?defina DB_NAME}
+      DB_USER: ${DB_USER:?defina DB_USER}
+      DB_PASSWORD: ${DB_PASSWORD:?defina DB_PASSWORD}
+      DB_MIGRATION_USER: ${DB_MIGRATION_USER:?defina DB_MIGRATION_USER}
+      DB_MIGRATION_PASSWORD: ${DB_MIGRATION_PASSWORD:?defina DB_MIGRATION_PASSWORD}
+    volumes:
+      - postgres-data:/var/lib/postgresql
+      - ./postgres/10-readowl.sh:/docker-entrypoint-initdb.d/10-readowl.sh:ro
+      - ./postgres/roles.sql:/readowl/roles.sql:ro
+      - ./scripts:/readowl/scripts:ro
+    healthcheck:
+      # Por TCP: na primeira inicialização, o servidor temporário que cria o banco só atende pelo socket.
+      test: [CMD-SHELL, 'pg_isready --host 127.0.0.1 --username postgres --dbname "$$DB_NAME"']
+      interval: 5s
+      timeout: 5s
+      retries: 30
+    networks: [data]
+    mem_limit: 1g
+
+  # Aplica as migrations e termina. A aplicação só sobe depois, sem conhecer esta credencial.
+  migrate:
+    <<: *hardening
+    image: ${READOWL_IMAGE:?defina READOWL_IMAGE}
+    restart: "no"
+    entrypoint: [java, -XX:MaxRAMPercentage=70, -cp, app.jar, br.com.readowl.readowl.shared.config.DatabaseMigration]
+    environment:
+      <<: *database
+      DB_MIGRATION_USER: ${DB_MIGRATION_USER:?defina DB_MIGRATION_USER}
+      DB_MIGRATION_PASSWORD: ${DB_MIGRATION_PASSWORD:?defina DB_MIGRATION_PASSWORD}
+    tmpfs: [/tmp]
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks: [data]
+    mem_limit: 512m
+
+  app:
+    <<: *hardening
+    image: ${READOWL_IMAGE:?defina READOWL_IMAGE}
+    environment:
+      <<: *database
+      DB_PASSWORD: ${DB_PASSWORD:?defina DB_PASSWORD}
+      APP_PUBLIC_URL: ${APP_PUBLIC_URL:?defina APP_PUBLIC_URL}
+      MAIL_FROM: ${MAIL_FROM:?defina MAIL_FROM}
+      SMTP_HOST: ${SMTP_HOST:?defina SMTP_HOST}
+      SMTP_PORT: ${SMTP_PORT:?defina SMTP_PORT}
+      SMTP_USER: ${SMTP_USER:-}
+      SMTP_PASSWORD: ${SMTP_PASSWORD:-}
+      GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID:-}
+      GOOGLE_CLIENT_SECRET: ${GOOGLE_CLIENT_SECRET:-}
+      # Só o endereço fixo do NGINX nesta rede pode informar o IP do cliente.
+      TRUSTED_PROXIES: 172\.30\.0\.10
+    tmpfs: [/tmp]
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+    # Sem curl na imagem: o próprio bash faz o pedido. A porta 8081 não é publicada.
+    healthcheck:
+      test:
+        - CMD
+        - bash
+        - -c
+        - exec 3<>/dev/tcp/127.0.0.1/8081 && printf 'GET /actuator/health/readiness HTTP/1.0\r\n\r\n' >&3 && head -n 1 <&3 | grep -q ' 200 '
+      interval: 10s
+      timeout: 5s
+      retries: 6
+      start_period: 60s
+    # Soma das 40 s que as requisições e os e-mails em andamento podem levar para terminar.
+    stop_grace_period: 60s
+    networks:
+      data:
+      edge:
+        # Endereço fixo: o NGINX resolve o nome uma vez, ao iniciar, e continua certo depois que este contêiner é recriado.
+        ipv4_address: 172.30.0.20
+    # 16 hashes de senha simultâneos usam cerca de 300 MiB do heap, que fica com 70% deste valor.
+    mem_limit: 1g
+
+  nginx:
+    <<: *hardening
+    image: nginxinc/nginx-unprivileged:1.30.6-alpine@sha256:f5116ed4606f3eb015dd4a8e28cb9b351476dc0ad4bc6e9f93b19cec130cdf03
+    environment:
+      APP_UPSTREAM: app:8080
+      APP_PUBLIC_URL: ${APP_PUBLIC_URL:?defina APP_PUBLIC_URL}
+      SERVER_NAME: ${SERVER_NAME:?defina SERVER_NAME}
+    volumes:
+      - ./nginx/readowl.conf.template:/etc/nginx/templates/default.conf.template:ro
+      - ${TLS_CERT_DIR:?defina TLS_CERT_DIR}:/etc/nginx/certs:ro
+    tmpfs:
+      - /tmp
+      # A imagem gera a configuração final aqui, a partir do template. O usuário 101 é o do NGINX nessa imagem.
+      - /etc/nginx/conf.d:uid=101,gid=101
+    ports:
+      - ${HTTP_PORT:-80}:8080
+      - ${HTTPS_PORT:-443}:8443
+    depends_on:
+      app:
+        condition: service_healthy
+    healthcheck:
+      test: [CMD, wget, --quiet, --output-document=/dev/null, http://127.0.0.1:8082/]
+      interval: 10s
+      timeout: 5s
+      retries: 6
+    networks:
+      edge:
+        ipv4_address: 172.30.0.10
+    mem_limit: 128m
+
+networks:
+  # Sem saída para a internet: só o que precisa do banco entra nela.
+  data:
+    internal: true
+  # Porta de saída da aplicação (SMTP, Google) e caminho do NGINX até ela.
+  edge:
+    ipam:
+      config:
+        - subnet: 172.30.0.0/24
+
+volumes:
+  postgres-data:

@@ -13,3 +13,16 @@ updates:
     schedule:
       interval: weekly
     open-pull-requests-limit: 5
+  # As imagens têm versão e digest fixos, e só mudam por aqui.
+  - package-ecosystem: docker
+    directory: /backend/readowl
+    target-branch: dev
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5
+  - package-ecosystem: docker-compose
+    directory: /infra
+    target-branch: dev
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5

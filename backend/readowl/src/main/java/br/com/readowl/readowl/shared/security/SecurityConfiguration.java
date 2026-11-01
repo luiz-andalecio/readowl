@@ -2,10 +2,13 @@ package br.com.readowl.readowl.shared.security;
 
 import jakarta.servlet.DispatcherType;
 import org.springframework.beans.factory.ObjectProvider;
+import org.springframework.beans.factory.annotation.Value;
+import org.springframework.boot.actuate.autoconfigure.web.server.ManagementPortType;
 import org.springframework.boot.health.actuate.endpoint.HealthEndpoint;
 import org.springframework.boot.security.autoconfigure.actuate.web.servlet.EndpointRequest;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.core.env.Environment;
 import org.springframework.http.HttpMethod;
 import org.springframework.http.HttpStatus;
 import org.springframework.security.config.Customizer;
@@ -50,14 +53,19 @@ class SecurityConfiguration {
                                             CsrfTokenRepository csrfTokenRepository,
                                             SecurityContextRepository securityContextRepository,
                                             SessionAccessCheck sessionAccessCheck,
-                                            ObjectProvider<Customizer<OAuth2LoginConfigurer<HttpSecurity>>> oauth2Login)
+                                            ObjectProvider<Customizer<OAuth2LoginConfigurer<HttpSecurity>>> oauth2Login,
+                                            Environment environment)
             throws Exception {
         oauth2Login.ifAvailable(http::oauth2Login);
+        // Na porta interna de produção, que não é publicada, não há login. A regra não vale para a porta pública.
+        boolean internalPort = ManagementPortType.get(environment) == ManagementPortType.DIFFERENT;
         return http
                 .addFilterBefore(new SessionAccessFilter(sessionAccessCheck), AuthorizationFilter.class)
                 .authorizeHttpRequests(requests -> requests
                         .dispatcherTypeMatchers(DispatcherType.ERROR).permitAll()
-                        .requestMatchers(EndpointRequest.to(HealthEndpoint.class)).permitAll()
+                        .requestMatchers(internalPort ? EndpointRequest.toAnyEndpoint()
+                                : EndpointRequest.to(HealthEndpoint.class)).permitAll()
+                        .requestMatchers(HttpMethod.GET, "/livez", "/readyz").permitAll()
                         // Editar usuários é exclusivo do root; o restante da administração, de admin e root.
                         .requestMatchers(HttpMethod.PATCH, "/api/v1/admin/users/**").hasRole("ROOT")
                         .requestMatchers("/api/v1/admin/**").hasAnyRole("ADMIN", "ROOT")
@@ -95,8 +103,9 @@ class SecurityConfiguration {
     }
 
     @Bean
-    CsrfTokenRepository csrfTokenRepository() {
+    CsrfTokenRepository csrfTokenRepository(@Value("${readowl.csrf-cookie-name}") String cookieName) {
         CookieCsrfTokenRepository repository = CookieCsrfTokenRepository.withHttpOnlyFalse();
+        repository.setCookieName(cookieName);
         repository.setCookieCustomizer(cookie -> cookie.sameSite("Lax"));
         return repository;
     }

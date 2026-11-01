@@ -5,11 +5,13 @@ on:
     branches: [main, dev]
     paths:
       - backend/**
+      - infra/**
       - docs/backend-api-contract.md
       - .github/workflows/backend.yml
   pull_request:
     paths:
       - backend/**
+      - infra/**
       - docs/backend-api-contract.md
       - .github/workflows/backend.yml
   schedule:
@@ -63,8 +65,8 @@ jobs:
         run: sh ./mvnw --batch-mode --no-transfer-progress verify -Pcoverage
       - name: JAR de produção
         env:
-          DB_USER: readowl
-          DB_PASSWORD: readowl-ci
+          DB_ADMIN_USER: readowl
+          DB_ADMIN_PASSWORD: readowl-ci
         run: sh scripts/smoke-test.sh
       - name: Guardar os relatórios
         if: always()
@@ -76,6 +78,28 @@ jobs:
             backend/readowl/target/failsafe-reports
             backend/readowl/target/site/jacoco
           retention-days: 14
+
+  homologation:
+    name: Imagem, Compose e NGINX
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    defaults:
+      run:
+        working-directory: .
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Subir o ambiente a partir do repositório
+        run: sh infra/homolog.sh up
+      - name: Conferir usuários, permissões, proxy e e-mail
+        run: sh infra/homolog.sh check
+      - name: Fazer um backup e restaurá-lo
+        run: sh infra/homolog.sh drill
+      - name: Mostrar os logs
+        if: failure()
+        run: sh infra/homolog.sh logs
+      - name: Remover o ambiente
+        if: always()
+        run: sh infra/homolog.sh destroy
 
   dependencies:
     name: Vulnerabilidades em dependências

@@ -1,0 +1,25 @@
+# Acréscimos de homologação: a imagem sai do repositório e os e-mails ficam na caixa de teste, sem sair para ninguém.
+services:
+  migrate:
+    build:
+      context: ../backend/readowl
+
+  app:
+    build:
+      context: ../backend/readowl
+    environment:
+      # O Mailpit não tem autenticação nem TLS.
+      SPRING_MAIL_PROPERTIES_MAIL_SMTP_AUTH: "false"
+      SPRING_MAIL_PROPERTIES_MAIL_SMTP_STARTTLS_ENABLE: "false"
+      SPRING_MAIL_PROPERTIES_MAIL_SMTP_STARTTLS_REQUIRED: "false"
+
+  mailpit:
+    image: axllent/mailpit:v1.33@sha256:9b3a463be15354c0f0eba91697d80e3e0d8a5623ef0e627cacc836bc17fd5231
+    restart: unless-stopped
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    ports:
+      # A caixa de entrada só abre na própria máquina.
+      - 127.0.0.1:${MAILPIT_PORT:-8025}:8025
+    networks: [data, edge]
+    mem_limit: 128m

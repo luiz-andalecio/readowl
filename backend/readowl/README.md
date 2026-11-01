@@ -53,6 +53,8 @@ Preencha `DB_PASSWORD` e `READOWL_TEST_DB_PASSWORD`. O `.env` não é versionado
 |---|---|---|
 | `DB_HOST`, `DB_PORT`, `DB_NAME` | Conexão com o banco | `localhost`, `5432`, `readowl_dev` (só no perfil `dev`) |
 | `DB_USER`, `DB_PASSWORD` | Credenciais do banco | Nenhum |
+| `DB_SSL_MODE`, `DB_SSL_ROOT_CERT` | TLS com o banco. Com o banco em outro host, `verify-full` e o certificado da autoridade | `prefer` (só no perfil `dev`), sem certificado |
+| `DB_MIGRATION_USER`, `DB_MIGRATION_PASSWORD` | Só para `DatabaseMigration`, em produção: o dono do schema | Nenhum |
 | `READOWL_TEST_DB_URL`, `READOWL_TEST_DB_USER`, `READOWL_TEST_DB_PASSWORD` | Banco dos testes | Sem URL, usa Testcontainers |
 | `APP_PUBLIC_URL` | Endereço público do site, usado nos links dos e-mails e no retorno do Google | `http://localhost:4200` (só no perfil `dev`) |
 | `SMTP_HOST`, `SMTP_PORT` | Servidor de e-mail | `localhost`, `1025` (só no perfil `dev`) |
@@ -60,6 +62,7 @@ Preencha `DB_PASSWORD` e `READOWL_TEST_DB_PASSWORD`. O `.env` não é versionado
 | `MAIL_FROM` | Remetente dos e-mails | `no-reply@readowl.local` (só no perfil `dev`) |
 | `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET` | Login com Google | Sem o ID, o login com Google fica desativado |
 | `TRUSTED_PROXIES` | Só no perfil `prod`: expressão regular com o endereço do proxy, como `172\.18\.0\.2` | Nenhum: a aplicação não sobe sem ela |
+| `MANAGEMENT_PORT` | Só no perfil `prod`: porta interna de saúde e métricas | `8081` |
 
 ### E-mail em desenvolvimento
 
@@ -98,7 +101,7 @@ Sem perfil, a aplicação **não inicia**: as variáveis do banco não têm valo
 | Perfil | Finalidade |
 |---|---|
 | `dev` | Desenvolvimento local: carrega `.env`, cookie de sessão sem `Secure` |
-| `prod` | Produção atrás de proxy HTTPS: cookie `__Host-SESSION`, logs estruturados ECS |
+| `prod` | Produção atrás de proxy HTTPS: cookies `__Host-SESSION` e `__Host-XSRF-TOKEN`, logs estruturados ECS, migrations à parte, Actuator em porta interna |
 | `test` | Testes: fica em `src/test/resources` e não entra no JAR |
 
 ## Build e testes
@@ -118,9 +121,10 @@ O artefato é gerado em `target/readowl-0.0.1-SNAPSHOT.jar`.
 |---|---|
 | Testes e JAR de produção | `mvnw verify` com PostgreSQL 18, relatório de cobertura e `scripts/smoke-test.sh` |
 | Vulnerabilidades em dependências | OSV-Scanner. Também roda toda segunda, porque vulnerabilidades novas aparecem sem mudança no código |
+| Imagem, Compose e NGINX | Sobe a homologação do repositório, confere proxy e permissões, e restaura um backup |
 | Testes com Testcontainers | Só toda segunda e sob demanda, porque sobe um contêiner por contexto do Spring |
 
-Para que um teste falhando impeça a integração, ative a proteção das branches `dev` e `main` no GitHub, exigindo os dois primeiros jobs. O workflow sozinho não bloqueia nada.
+Para que um teste falhando impeça a integração, ative a proteção das branches `dev` e `main` no GitHub, exigindo os três primeiros jobs. O workflow sozinho não bloqueia nada.
 
 ### Cobertura
 
@@ -132,10 +136,10 @@ O relatório fica em `target/site/jacoco/index.html`. Use-o para encontrar o que
 
 ### Teste do JAR de produção
 
-`scripts/smoke-test.sh` sobe o JAR com o perfil `prod` e confere a inicialização, os cookies `Secure` e os logs em ECS. **Ele apaga o schema do banco**, então só aceita um banco cujo nome termine em `_test`. No Windows, rode pelo Git Bash, informando os executáveis se não estiverem no `PATH`:
+`scripts/smoke-test.sh` sobe o JAR como a imagem faz, com o perfil `prod` e usuários separados, e confere as migrations, as permissões, os cookies e os logs em ECS. Cria e apaga um banco próprio, então precisa de um superusuário. Com `DB_SSL_MODE=verify-full` e `DB_SSL_ROOT_CERT`, confere também o TLS. No Windows, rode pelo Git Bash, informando os executáveis se não estiverem no `PATH`:
 
 ```sh
-DB_USER=readowl DB_PASSWORD=... PSQL='/c/Program Files/PostgreSQL/18/bin/psql.exe' JAVA="$JAVA_HOME/bin/java" sh scripts/smoke-test.sh
+DB_ADMIN_USER=postgres DB_ADMIN_PASSWORD=... PSQL='/c/Program Files/PostgreSQL/18/bin/psql.exe' JAVA="$JAVA_HOME/bin/java" sh scripts/smoke-test.sh
 ```
 
 ### Testes
@@ -153,7 +157,8 @@ Os testes de integração usam PostgreSQL real, de duas formas:
 | `MigrationUpgradeIntegrationTest` | Atualização de um banco com dados a partir da versão 6, falha sem alterar nada |
 | `QueryCountIntegrationTest` | Listas sem uma consulta por item, comparando páginas de tamanhos diferentes |
 | `UnstorableTextIntegrationTest` | Caractere nulo em corpos e parâmetros responde 400, sem deixar nada gravado |
-| `TrustedProxyIntegrationTest`, `UntrustedProxyIntegrationTest` | Perfil `prod`: cabeçalhos forjados, auditoria, bloqueio de conta por terceiros |
+| `TrustedProxyIntegrationTest`, `UntrustedProxyIntegrationTest` | Perfil `prod`: cabeçalhos forjados, auditoria, bloqueio de conta por terceiros, portas pública e interna |
+| `DatabaseMigrationTest`, `QueueMetricsIntegrationTest` | Variáveis das migrations à parte e métricas das filas |
 | `ContentQuotaIntegrationTest` | Cotas e limites de autoria |
 | `ModerationIndependenceIntegrationTest` | Conteúdo oculto não é excluído, e ninguém modera o próprio conteúdo |
 | `ChapterViewPurgeIntegrationTest`, `DeniedAuditIntegrationTest` | Limpeza de visualizações e limite das recusas na auditoria |
@@ -270,7 +275,11 @@ As dependências seguem uma direção, sem ciclos: `publishing` e `library` conh
 
 ### Produção
 
-- **Corpo das requisições:** a aplicação recusa JSON acima de 3 MiB ao ler. Configure também `client_max_body_size` no NGINX.
+Imagem em [`Dockerfile`](Dockerfile), ambiente em [`infra/`](../../infra/) e procedimentos de implantação, rollback, backup e monitoramento em [`docs/operations-runbook.md`](../../docs/operations-runbook.md).
+
+- **Usuários do banco:** a aplicação usa um usuário sem poder sobre o schema, que não apaga nem altera `audit_log`. `DatabaseMigration` aplica as migrations antes, com o dono do schema, e `afterMigrate.sql` refaz as permissões a cada execução. Em `dev` e nos testes, com um único usuário, nada disso se aplica. O `DELETE` e o `UPDATE` de `audit_log` ficam proibidos no banco, então uma futura retenção precisa rodar com o usuário de migration.
+- **Actuator:** fica na porta interna, com saúde e métricas sem login. Na porta pública só existem `/readyz` e `/livez`, sem detalhes.
+- **Corpo das requisições:** a aplicação recusa JSON acima de 3 MiB ao ler, e o NGINX recusa antes de chegar a ela.
 - **Proxy:** o perfil `prod` só aceita `X-Forwarded-For` e `X-Forwarded-Proto` de conexões vindas de `TRUSTED_PROXIES`, e ignora os de qualquer outra origem. O cliente é o último endereço da lista que não é um proxy confiável, então tanto `$remote_addr` quanto `$proxy_add_x_forwarded_for` são seguros no NGINX. **Um valor errado em `TRUSTED_PROXIES` faz todos os clientes parecerem um só, o endereço do proxy, e dispara os limites por IP.**
 - **Limites por IP:** `ClientAddress` é o único ponto que decide quem é o cliente. Um bloco IPv6 `/64` conta como um único cliente.
 - **Login:** cada IP só gasta uma parte do limite da conta, e um login correto zera as tentativas. Um ataque a partir de 10 IPs ainda esgota esse limite, que protege a senha, mas não afeta navegadores em que a conta já entrou (`known_devices`, cookie `READOWL_DEVICE`). Em outro navegador, recuperar a senha libera o acesso.

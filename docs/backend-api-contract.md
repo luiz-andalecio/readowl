@@ -84,12 +84,18 @@ Outros erros de protocolo usam o nome do status HTTP como `code`, por exemplo `U
 
 Toda requisição que altera estado (`POST`, `PUT`, `PATCH`, `DELETE`) precisa do token CSRF, **inclusive login e logout**. Sem ele, a resposta é 403 com `CSRF_TOKEN_INVALID`.
 
-| Item | Valor |
-|---|---|
-| Cookie (legível por JavaScript) | `XSRF-TOKEN` |
-| Header de envio | `X-XSRF-TOKEN` |
+| Item | Desenvolvimento | Produção |
+|---|---|---|
+| Cookie (legível por JavaScript) | `XSRF-TOKEN` | `__Host-XSRF-TOKEN` |
+| Header de envio | `X-XSRF-TOKEN` | `X-XSRF-TOKEN` |
 
-Esses são os nomes padrão do `HttpClient` do Angular, que envia o header automaticamente em requisições com **URL relativa** que alteram estado.
+O prefixo `__Host-` exige HTTPS, por isso o nome muda entre os ambientes. Ele impede que um subdomínio defina o cookie no lugar do site.
+
+`XSRF-TOKEN` é o padrão do `HttpClient` do Angular, que envia o header automaticamente em requisições com **URL relativa** que alteram estado. **Em produção, é preciso informar o nome**, ou o header deixa de ser enviado e toda escrita responde 403:
+
+```ts
+withXsrfConfiguration({ cookieName: environment.production ? '__Host-XSRF-TOKEN' : 'XSRF-TOKEN', headerName: 'X-XSRF-TOKEN' })
+```
 
 **O cookie só é criado sob demanda.** Respostas de leitura não o emitem, o que permite cache de páginas públicas. O fluxo é:
 
@@ -128,7 +134,7 @@ Os limites contam por IP e por conta e respondem 429 com `RATE_LIMITED`:
 
 ### `GET /auth/csrf`
 
-Emite o cookie `XSRF-TOKEN`. Público.
+Emite o cookie CSRF (`XSRF-TOKEN`; em produção, `__Host-XSRF-TOKEN`). Público.
 
 **204**, sem corpo.
 
@@ -1353,16 +1359,33 @@ As demais leituras não são registradas.
 
 ## Operacional
 
-### `GET /actuator/health`
+### Verificação de saúde
 
-Verificação operacional da aplicação. Público, sem detalhes internos. Uma falha de SMTP não altera o resultado.
+Pública e sem detalhes internos. Uma falha de SMTP não altera o resultado. O endereço depende do ambiente:
+
+| Ambiente | Endereço |
+|---|---|
+| Desenvolvimento | `GET /actuator/health` |
+| Produção, pelo site | `GET /healthz` |
 
 **200**
 ```json
-{ "status": "UP", "groups": ["liveness", "readiness"] }
+{ "status": "UP" }
 ```
 
+Em desenvolvimento, a resposta também traz `groups`.
+
 **503** quando a aplicação ou o banco estão indisponíveis.
+
+### Respostas do proxy
+
+Em produção, o NGINX responde algumas requisições antes de elas chegarem à aplicação, no mesmo formato de erro e sem `correlationId`:
+
+| Status | `code` | Quando |
+|---|---|---|
+| 413 | `CONTENT_TOO_LARGE` | Corpo acima de 3 MiB |
+| 429 | `RATE_LIMITED` | Acima de 30 requisições por segundo por IP, ou de 2 buscas por segundo em `GET /books?query=`, com uma pequena folga. `Retry-After` informa a espera |
+| 503 | `TEMPORARILY_UNAVAILABLE` | Aplicação fora do ar, como durante uma implantação. `Retry-After` informa a espera |
 
 ### Demais rotas
 
@@ -1376,7 +1399,10 @@ Nada disso foi alterado no projeto Angular.
 |---|---|
 | Cliente HTTP | Registrar `provideHttpClient` e usar URLs relativas |
 | Proxy de desenvolvimento | Encaminhar `/api`, `/oauth2` e `/login/oauth2` para `http://localhost:8080` |
-| SSR | No servidor Node, usar URL absoluta e apenas GETs públicos: os cookies do usuário não são encaminhados |
+| CSRF em produção | Informar o cookie `__Host-XSRF-TOKEN` em `withXsrfConfiguration`, como na [seção CSRF](#csrf) |
+| Busca | Aguardar a pessoa parar de digitar antes de chamar `GET /books?query=`, e tratar 429 esperando o tempo de `Retry-After` |
+| Links de e-mail | Retirar o token da URL assim que abrir as páginas de confirmação e de redefinição de senha, para não ir em `Referer` e logs |
+| SSR | No servidor Node, usar URL absoluta e apenas GETs públicos: os cookies do usuário não são encaminhados. Chamar a aplicação pela rede interna, porque pelo NGINX todas as visitas contariam como um único IP |
 | Renderização | `app.routes.server.ts` usa `RenderMode.Prerender` em `**`, que não atende rotas dinâmicas previstas para SSR |
 | Rotas novas | `/login`, `/conta`, `/verificar-email`, `/redefinir-senha` e `/recuperar-senha` |
 | Imagens | Tratar obra e perfil sem capa ou avatar até a etapa de mídia |
