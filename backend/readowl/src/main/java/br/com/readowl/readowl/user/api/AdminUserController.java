@@ -47,10 +47,11 @@ class AdminUserController {
     }
 
     @GetMapping
-    PageResponse<AdminUserService.AdminUserView> list(@RequestParam(defaultValue = "0") int page,
+    PageResponse<AdminUserService.AdminUserView> list(@RequestParam(required = false) @Size(max = 255) String query,
+                                                      @RequestParam(defaultValue = "0") int page,
                                                       @RequestParam(defaultValue = "20") int size,
                                                       @RequestParam(defaultValue = "username") String sort) {
-        return users.list(PageRequests.of(page, size, sort, SORTS));
+        return users.list(query, PageRequests.of(page, size, sort, SORTS));
     }
 
     @GetMapping("/{id}")

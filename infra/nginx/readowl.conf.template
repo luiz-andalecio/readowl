@@ -163,6 +163,17 @@ server {
         proxy_pass http://readowl_app;
     }
 
+    location ~ ^/sitemap(\.xml|/[0-9]+\.xml)$ {
+        limit_req zone=api burst=60 nodelay;
+        proxy_cache public_reads;
+        proxy_pass http://readowl_app;
+    }
+
+    location = /robots.txt {
+        default_type text/plain;
+        return 200 "User-agent: *\nDisallow: /conta\nDisallow: /login\nSitemap: ${APP_PUBLIC_URL}/sitemap.xml\n";
+    }
+
     # Para monitores externos: responde 200 só com a aplicação e o banco no ar, sem detalhes.
     location = /healthz {
         access_log off;

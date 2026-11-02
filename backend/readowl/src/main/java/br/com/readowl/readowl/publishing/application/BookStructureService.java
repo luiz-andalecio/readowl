@@ -11,6 +11,7 @@ import br.com.readowl.readowl.publishing.domain.Volume;
 import br.com.readowl.readowl.publishing.infrastructure.ChapterDraftRepository;
 import br.com.readowl.readowl.publishing.infrastructure.ChapterRepository;
 import br.com.readowl.readowl.publishing.infrastructure.ChapterRepository.ChapterSlugRow;
+import br.com.readowl.readowl.publishing.infrastructure.ChapterSlugHistory;
 import br.com.readowl.readowl.publishing.infrastructure.VolumeRepository;
 import br.com.readowl.readowl.shared.audit.AuditTrail;
 import br.com.readowl.readowl.shared.config.ReadowlProperties;
@@ -45,10 +46,12 @@ public class BookStructureService {
     private final ChapterDraftRepository drafts;
     private final ReadowlProperties.Limits limits;
     private final AuditTrail audit;
+    private final ChapterSlugHistory slugHistory;
 
     BookStructureService(BookAccess bookAccess, ChapterAccess chapterAccess, VolumeRepository volumes,
                          ChapterRepository chapters, ChapterDraftRepository drafts, ReadowlProperties properties,
-                         AuditTrail audit) {
+                         AuditTrail audit, ChapterSlugHistory slugHistory) {
+        this.slugHistory = slugHistory;
         this.bookAccess = bookAccess;
         this.chapterAccess = chapterAccess;
         this.volumes = volumes;
@@ -124,6 +127,7 @@ public class BookStructureService {
         String cleanTitle = title.trim();
         Chapter chapter = chapters.saveAndFlush(
                 new Chapter(book, volume, cleanTitle, uniqueSlug(bookId, cleanTitle, null), order));
+        slugHistory.claim(bookId, chapter.getSlug());
         drafts.save(new ChapterDraft(chapter, ChapterDocuments.EMPTY_DOCUMENT, ChapterDocuments.FORMAT_VERSION));
         return ChapterView.from(chapter);
     }
@@ -135,7 +139,9 @@ public class BookStructureService {
         }
         String cleanTitle = title.trim();
         if (!cleanTitle.equals(chapter.getTitle())) {
+            String oldSlug = chapter.getSlug();
             chapter.rename(cleanTitle, uniqueSlug(chapter.getBook().getId(), cleanTitle, chapterId));
+            slugHistory.recordRename(chapter.getBook().getId(), chapterId, oldSlug, chapter.getSlug());
         }
         return ChapterView.from(chapters.saveAndFlush(chapter));
     }

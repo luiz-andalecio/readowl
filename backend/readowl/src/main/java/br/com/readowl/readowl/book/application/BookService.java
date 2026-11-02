@@ -4,6 +4,7 @@ import br.com.readowl.readowl.book.domain.Book;
 import br.com.readowl.readowl.book.domain.BookStatus;
 import br.com.readowl.readowl.book.domain.ContentRating;
 import br.com.readowl.readowl.book.infrastructure.BookRepository;
+import br.com.readowl.readowl.book.infrastructure.BookSlugHistory;
 import br.com.readowl.readowl.genre.application.TaxonomyService;
 import br.com.readowl.readowl.shared.api.PageResponse;
 import br.com.readowl.readowl.shared.audit.AuditTrail;
@@ -37,10 +38,12 @@ public class BookService {
     private final RateLimiter rateLimiter;
     private final AuditTrail audit;
     private final ReadowlProperties.Limits limits;
+    private final BookSlugHistory slugHistory;
 
     BookService(BookRepository books, BookAccess access, UserService users, TaxonomyService taxonomy,
                 TransactionOperations transaction, RateLimiter rateLimiter, AuditTrail audit,
-                ReadowlProperties properties) {
+                ReadowlProperties properties, BookSlugHistory slugHistory) {
+        this.slugHistory = slugHistory;
         this.books = books;
         this.access = access;
         this.users = users;
@@ -72,6 +75,7 @@ public class BookService {
                         .withProperty("limit", limits.booksPerAccount());
             }
             requireFreeSlug(slug);
+            slugHistory.claim(slug);
             Book book = new Book(title, data.acronym(), slug, data.synopsis().trim(),
                     users.requireById(principal.id()));
             book.updateReleaseFrequency(Texts.blankToNull(data.releaseFrequency()));
@@ -102,6 +106,7 @@ public class BookService {
             if (!slug.equals(book.getSlug())) {
                 requireFreeSlug(slug);
             }
+            slugHistory.recordRename(book.getId(), book.getSlug(), slug);
             book.rename(title, acronym);
             if (changes.synopsis() != null) {
                 book.updateSynopsis(changes.synopsis().trim());

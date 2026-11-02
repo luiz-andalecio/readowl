@@ -4,6 +4,8 @@ import br.com.readowl.readowl.user.domain.Role;
 import br.com.readowl.readowl.user.domain.User;
 import br.com.readowl.readowl.user.domain.UserStatus;
 import jakarta.persistence.LockModeType;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Lock;
 import org.springframework.data.jpa.repository.Query;
@@ -27,6 +29,12 @@ public interface UserRepository extends JpaRepository<User, UUID> {
     boolean existsByIdAndRoleAndStatus(UUID id, Role role, UserStatus status);
 
     boolean existsByIdAndTermsVersion(UUID id, String termsVersion);
+
+    /**
+     * @param prefix termo já em minúsculas e com curingas escapados, terminado em %
+     */
+    @Query("select u from User u where lower(u.email) like :prefix escape '\\' or u.username like :prefix escape '\\'")
+    Page<User> search(String prefix, Pageable pageable);
 
     @Lock(LockModeType.PESSIMISTIC_WRITE)
     List<User> findLockedByRoleAndStatus(Role role, UserStatus status);

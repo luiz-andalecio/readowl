@@ -28,9 +28,11 @@ public class RegistrationService {
     private final PasswordEncoder passwordEncoder;
     private final RateLimiter rateLimiter;
     private final TransactionOperations transaction;
+    private final PasswordPolicy passwordPolicy;
 
     RegistrationService(UserService users, AccountTokens tokens, AccountMails mails, PasswordEncoder passwordEncoder,
-                        RateLimiter rateLimiter, TransactionOperations transaction) {
+                        RateLimiter rateLimiter, TransactionOperations transaction, PasswordPolicy passwordPolicy) {
+        this.passwordPolicy = passwordPolicy;
         this.users = users;
         this.tokens = tokens;
         this.mails = mails;
@@ -42,6 +44,7 @@ public class RegistrationService {
     public void register(String name, String username, String email, String password, String termsVersion, String clientIp) {
         String normalizedEmail = User.normalizeEmail(email);
         users.requireCurrentTerms(termsVersion);
+        passwordPolicy.requireAcceptable(password);
         rateLimiter.acquire(RateLimitPolicy.REGISTER_IP, clientIp);
         rateLimiter.acquire(RateLimitPolicy.REGISTER_EMAIL, normalizedEmail);
         // Calculado em todos os casos: o tempo de resposta também não pode revelar se o e-mail existe.

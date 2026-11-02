@@ -169,6 +169,20 @@ Os links enviados por e-mail levam o token no fragmento da URL (`#token=`), que 
 
 ## Capacidade
 
+### Meta
+
+A referência são os sites com o público que o Readowl quer alcançar, segundo estimativas do Similarweb para setembro de 2026. Simultâneos médios são visitas × duração ÷ segundos do mês. O pico supõe 5 vezes a média, porque o Similarweb não informa a distribuição ao longo do dia.
+
+| Site | Visitas/mês | Páginas/visita | Duração | Simultâneos, média | Simultâneos, pico | Páginas/s, pico |
+|---|---:|---:|---:|---:|---:|---:|
+| illusia.com.br | 49.074 | 4,68 | 4:00 | 5 | 23 | 0,4 |
+| novelmania.com.br | 125.253 | 3,67 | 6:33 | 19 | 95 | 0,9 |
+| tapas.io | 2.884.000 | 6,74 | 4:09 | 277 | 1.385 | 37 |
+
+**Meta: 1.500 leitores simultâneos, o pico estimado do Tapas, com 150 pedidos por segundo à API**, supondo 4 pedidos por página. As medidas abaixo já passam desse número em uma máquina de desenvolvimento e sem cache, então **falta confirmar no servidor real**. Até o nível do Tapas, um único servidor deve bastar.
+
+### Medidas
+
 [`scripts/load/run.sh`](../backend/readowl/scripts/load/run.sh) mede o JAR de produção com um banco de dados sintéticos: 20 mil contas, 5 mil obras, 50 mil capítulos e 150 mil comentários, 100 mil deles em uma única obra, seguida por 20 mil contas. Simula leitores anônimos, leitores logados que consultam as notificações a cada 30 segundos, pessoas comentando e o lançamento de um capítulo.
 
 **Medido em 01/11/2026**, com 60 segundos de aquecimento e 40 de medida, e cada usuário fazendo um pedido a cada 5 a 15 segundos. A aplicação foi limitada a 2 CPUs e 700 MiB, com pool de 10 conexões.

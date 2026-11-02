@@ -10,6 +10,7 @@ import br.com.readowl.readowl.publishing.infrastructure.ChapterNeighborQueries;
 import br.com.readowl.readowl.publishing.infrastructure.ChapterNeighborQueries.Neighbors;
 import br.com.readowl.readowl.publishing.infrastructure.ChapterRepository;
 import br.com.readowl.readowl.publishing.infrastructure.ChapterRepository.ChapterContentRow;
+import br.com.readowl.readowl.publishing.infrastructure.ChapterSlugHistory;
 import br.com.readowl.readowl.shared.api.PageResponse;
 import br.com.readowl.readowl.shared.exception.ApiException;
 import org.springframework.data.domain.Pageable;
@@ -33,11 +34,14 @@ public class ReadingService {
     private final PublicBooks publicBooks;
     private final ChapterRepository chapters;
     private final ChapterNeighborQueries neighborQueries;
+    private final ChapterSlugHistory slugHistory;
 
-    ReadingService(PublicBooks publicBooks, ChapterRepository chapters, ChapterNeighborQueries neighborQueries) {
+    ReadingService(PublicBooks publicBooks, ChapterRepository chapters, ChapterNeighborQueries neighborQueries,
+                   ChapterSlugHistory slugHistory) {
         this.publicBooks = publicBooks;
         this.chapters = chapters;
         this.neighborQueries = neighborQueries;
+        this.slugHistory = slugHistory;
     }
 
     public record AuthorView(String username, String name) {
@@ -86,10 +90,17 @@ public class ReadingService {
                 .map(row -> new PublicChapter(row.id(), row.title(), row.slug(), row.volumeId(), row.publishedAt())));
     }
 
+    private ApiException chapterNotFound(UUID bookId, String chapterSlug) {
+        return slugHistory.findCurrentPublishedSlug(bookId, chapterSlug).stream().findFirst()
+                .map(current -> ApiException.notFound("CHAPTER_MOVED", "Este capítulo mudou de endereço.")
+                        .withProperty("currentSlug", current))
+                .orElseGet(() -> ApiException.notFound("CHAPTER_NOT_FOUND", "Capítulo não encontrado."));
+    }
+
     public ChapterReading chapter(String bookSlug, String chapterSlug) {
         Book book = publicBooks.requireBySlug(bookSlug);
         ChapterContentRow chapter = chapters.findPublishedContent(book.getId(), chapterSlug)
-                .orElseThrow(() -> ApiException.notFound("CHAPTER_NOT_FOUND", "Capítulo não encontrado."));
+                .orElseThrow(() -> chapterNotFound(book.getId(), chapterSlug));
 
         Neighbors neighbors = neighborQueries.find(book.getId(), chapter.id());
         return new ChapterReading(chapter.id(), chapter.title(), chapter.slug(),

@@ -66,7 +66,7 @@ class SecurityConfiguration {
                         .dispatcherTypeMatchers(DispatcherType.ERROR).permitAll()
                         .requestMatchers(internalPort ? EndpointRequest.toAnyEndpoint()
                                 : EndpointRequest.to(HealthEndpoint.class)).permitAll()
-                        .requestMatchers(HttpMethod.GET, "/livez", "/readyz").permitAll()
+                        .requestMatchers(HttpMethod.GET, "/livez", "/readyz", "/sitemap.xml", "/sitemap/*").permitAll()
                         // Quem esteve em qual IP só é visto pelo root, e a leitura fica na auditoria.
                         .requestMatchers("/api/v1/admin/access-records", "/api/v1/admin/access-records/**").hasRole("ROOT")
                         // Editar usuários é exclusivo do root; o restante da administração, de admin e root.

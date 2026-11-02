@@ -39,13 +39,17 @@ public class Notification {
     @Column(nullable = false, length = 50)
     private NotificationType type;
 
-    @ManyToOne(optional = false, fetch = FetchType.LAZY)
-    @JoinColumn(name = "book_id", nullable = false)
+    // Avisos de moderação podem não ter obra nem capítulo.
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "book_id")
     private Book book;
 
-    @ManyToOne(optional = false, fetch = FetchType.LAZY)
-    @JoinColumn(name = "chapter_id", nullable = false)
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "chapter_id")
     private Chapter chapter;
+
+    @Column(length = 1000)
+    private String message;
 
     private Instant readAt;
 

@@ -9,6 +9,8 @@ import br.com.readowl.readowl.moderation.domain.ReportReason;
 import br.com.readowl.readowl.moderation.domain.ReportStatus;
 import br.com.readowl.readowl.moderation.domain.ReportTargetType;
 import br.com.readowl.readowl.moderation.infrastructure.ReportRepository;
+import br.com.readowl.readowl.notification.application.NotificationService;
+import br.com.readowl.readowl.notification.domain.NotificationType;
 import br.com.readowl.readowl.publishing.application.PublicChapters;
 import br.com.readowl.readowl.publishing.domain.Chapter;
 import br.com.readowl.readowl.publishing.domain.ChapterRevision;
@@ -50,10 +52,12 @@ public class ReportService {
     private final AuditTrail audit;
     private final RateLimiter rateLimiter;
     private final TransactionOperations transaction;
+    private final NotificationService notifications;
 
     ReportService(ReportRepository reports, PublicBooks publicBooks, PublicChapters publicChapters,
                   CommentModeration comments, UserService users, AuditTrail audit, RateLimiter rateLimiter,
-                  TransactionOperations transaction) {
+                  TransactionOperations transaction, NotificationService notifications) {
+        this.notifications = notifications;
         this.reports = reports;
         this.publicBooks = publicBooks;
         this.publicChapters = publicChapters;
@@ -157,6 +161,9 @@ public class ReportService {
         }
         report.close(status, Texts.blankToNull(note), users.requireById(principal.id()), Instant.now());
         reports.saveAndFlush(report);
+        // Só o resultado: a nota é interna, e dizer o que foi feito com o alvo exporia outra pessoa.
+        notifications.notifyModeration(report.getReporter().getId(), status == ReportStatus.RESOLVED
+                ? NotificationType.REPORT_RESOLVED : NotificationType.REPORT_DISMISSED, null, null, null);
         audit.record(principal.id(), "REPORT_CLOSED", "reports/" + id, Map.of("status", status));
         return ReportView.from(report);
     }

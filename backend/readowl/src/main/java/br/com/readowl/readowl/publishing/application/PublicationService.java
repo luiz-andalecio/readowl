@@ -143,7 +143,7 @@ public class PublicationService {
     /**
      * Como em uma despublicação, uma obra no ar não pode ficar sem capítulos: nesse caso, oculte a obra.
      */
-    public void hideChapter(UUID chapterId) {
+    public Chapter hideChapter(UUID chapterId) {
         Chapter chapter = chapterAccess.requireLocked(chapterId);
         if (chapter.isModerated()) {
             throw alreadyHidden();
@@ -156,9 +156,10 @@ public class PublicationService {
         }
         chapter.hideByModeration(Instant.now());
         chapters.flush();
+        return chapter;
     }
 
-    public void restoreChapter(UUID chapterId, SessionUser actor) {
+    public Chapter restoreChapter(UUID chapterId, SessionUser actor) {
         Chapter chapter = chapterAccess.requireLocked(chapterId);
         actor.requireIndependentReview(chapter.getBook().getAuthor().getId());
         if (!chapter.isModerated()) {
@@ -166,18 +167,20 @@ public class PublicationService {
         }
         chapter.restoreFromModeration();
         chapters.flush();
+        return chapter;
     }
 
-    public void hideBook(UUID bookId) {
+    public Book hideBook(UUID bookId) {
         Book book = bookAccess.requireLocked(bookId);
         if (book.isModerated()) {
             throw alreadyHidden();
         }
         book.hideByModeration(Instant.now());
         chapters.flush();
+        return book;
     }
 
-    public void restoreBook(UUID bookId, SessionUser actor) {
+    public Book restoreBook(UUID bookId, SessionUser actor) {
         Book book = bookAccess.requireLocked(bookId);
         actor.requireIndependentReview(book.getAuthor().getId());
         if (!book.isModerated()) {
@@ -185,6 +188,7 @@ public class PublicationService {
         }
         book.restoreFromModeration();
         chapters.flush();
+        return book;
     }
 
     private static ApiException alreadyHidden() {

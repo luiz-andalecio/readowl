@@ -166,6 +166,8 @@ Os testes de integração usam PostgreSQL real, de duas formas:
 | `UnstorableTextIntegrationTest` | Caractere nulo em corpos e parâmetros responde 400, sem deixar nada gravado |
 | `TrustedProxyIntegrationTest`, `UntrustedProxyIntegrationTest` | Perfil `prod`: cabeçalhos forjados, auditoria, bloqueio de conta por terceiros, portas pública e interna |
 | `DatabaseMigrationTest`, `QueueMetricsIntegrationTest` | Variáveis das migrations à parte e métricas das filas |
+| `AudienceReachIntegrationTest` | Endereços antigos de obras e capítulos, sitemap e nota no catálogo |
+| `ModerationNoticeIntegrationTest`, `AdminToolsIntegrationTest` | Avisos da moderação, busca de contas, reprocessamento de eventos e senhas muito comuns |
 | `AccountDeletionIntegrationTest` | Conta excluída sem dado pessoal em nenhuma tabela, comentários preservados, obra sob denúncia, última conta root |
 | `RetentionIntegrationTest` | Cada prazo de retenção, exceções por denúncia aberta, mínimos no banco |
 | `AccountSecurityIntegrationTest` | Sessões, prazos, login recente, avisos por e-mail, troca de e-mail, termos, registro de acesso, exportação, obras adultas |
@@ -257,7 +259,7 @@ As dependências seguem uma direção, sem ciclos: `publishing` e `library` conh
 
 ### Publicação
 
-- **Slugs:** a obra usa `sigla-titulo`; o capítulo usa o título, com um número se repetir na obra. Os dois mudam ao renomear, então um endereço antigo deixa de funcionar.
+- **Slugs:** a obra usa `sigla-titulo`; o capítulo usa o título, com um número se repetir na obra. Os dois mudam ao renomear. O endereço antigo responde `BOOK_MOVED` ou `CHAPTER_MOVED`, com o novo, para o SSR emitir 301. O histórico fica em `book_slug_history` e `chapter_slug_history`, e o slug atual de outra obra sempre vence um antigo. Antes disso, um endereço antigo deixa de funcionar.
 - **Acesso:** `BookAccess` é o único ponto que decide quem altera uma obra. Alterações na estrutura bloqueiam a linha da obra antes de ler os dados.
 - **Documento:** `ChapterDocuments` valida o JSON do editor por lista permitida e gera o HTML escrevendo as tags, com todo texto escapado. Nenhum HTML do cliente é interpretado, por isso não há biblioteca de sanitização.
 - **Revisões:** são imutáveis e todas ficam guardadas. Registram quem publicou.

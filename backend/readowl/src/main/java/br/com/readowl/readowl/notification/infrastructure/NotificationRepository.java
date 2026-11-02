@@ -12,30 +12,29 @@ import java.util.UUID;
 public interface NotificationRepository extends JpaRepository<Notification, UUID> {
 
     /**
-     * Sem o que saiu do ar: o link da notificação levaria a um 404, e a contagem de não lidas não bateria.
+     * Capítulos novos sem o que saiu do ar: o link levaria a um 404, e a contagem de não lidas não bateria. Avisos de
+     * moderação sempre aparecem, justamente porque tratam do que saiu do ar.
      */
+    String IS_VISIBLE = """
+             and (n.type <> br.com.readowl.readowl.notification.domain.NotificationType.NEW_CHAPTER
+                  or (b.publicationState = br.com.readowl.readowl.book.domain.PublicationState.PUBLISHED
+                      and c.state = br.com.readowl.readowl.publishing.domain.ChapterState.PUBLISHED
+                      and a.status = br.com.readowl.readowl.user.domain.UserStatus.ACTIVE))
+            """;
+
     @Query(value = """
-            select n from Notification n join fetch n.book b join fetch n.chapter c join b.author a
+            select n from Notification n left join fetch n.book b left join fetch n.chapter c left join b.author a
             where n.userId = :userId and (:unreadOnly = false or n.readAt is null)
-              and b.publicationState = br.com.readowl.readowl.book.domain.PublicationState.PUBLISHED
-              and c.state = br.com.readowl.readowl.publishing.domain.ChapterState.PUBLISHED
-              and a.status = br.com.readowl.readowl.user.domain.UserStatus.ACTIVE
-            """, countQuery = """
-            select count(n) from Notification n join n.book b join n.chapter c join b.author a
+            """ + IS_VISIBLE, countQuery = """
+            select count(n) from Notification n left join n.book b left join n.chapter c left join b.author a
             where n.userId = :userId and (:unreadOnly = false or n.readAt is null)
-              and b.publicationState = br.com.readowl.readowl.book.domain.PublicationState.PUBLISHED
-              and c.state = br.com.readowl.readowl.publishing.domain.ChapterState.PUBLISHED
-              and a.status = br.com.readowl.readowl.user.domain.UserStatus.ACTIVE
-            """)
+            """ + IS_VISIBLE)
     Page<Notification> findVisible(UUID userId, boolean unreadOnly, Pageable pageable);
 
     @Query("""
-            select count(n) from Notification n join n.book b join n.chapter c join b.author a
+            select count(n) from Notification n left join n.book b left join n.chapter c left join b.author a
             where n.userId = :userId and n.readAt is null
-              and b.publicationState = br.com.readowl.readowl.book.domain.PublicationState.PUBLISHED
-              and c.state = br.com.readowl.readowl.publishing.domain.ChapterState.PUBLISHED
-              and a.status = br.com.readowl.readowl.user.domain.UserStatus.ACTIVE
-            """)
+            """ + IS_VISIBLE)
     long countUnread(UUID userId);
 
     /**

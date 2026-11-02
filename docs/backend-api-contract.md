@@ -495,6 +495,7 @@ Troca a senha. Exige sessão.
 | Status | `code` | Quando |
 |---|---|---|
 | 400 | `INVALID_CURRENT_PASSWORD` | Senha atual incorreta |
+| 400 | `PASSWORD_TOO_COMMON` | Senha nova entre as mais usadas. Vale também no cadastro e na redefinição |
 | 409 | `PASSWORD_NOT_SET` | Conta sem senha. Use a recuperação de senha para definir uma |
 
 ## Gêneros e tags
@@ -568,6 +569,7 @@ Vale o mesmo para capítulos: o slug segue o título. Títulos repetidos dentro 
 | `acronym` | De 2 a 10 letras ou números, sem acentos ou espaços. É salva em maiúsculas |
 | `synopsis` | Até 2000 caracteres, não vazia |
 | `releaseFrequency` | Opcional, até 50 caracteres |
+| `contentRating` | `GENERAL`, o padrão, ou `ADULT`. Obras adultas não aparecem para visitantes nem no sitemap, e respondem 404 sem sessão |
 | `genreIds` | De 1 a 5 gêneros de `GET /genres` |
 | `tags` | Opcional, até 10 nomes com letras, números, espaços, `_` ou `-`. Tags novas são criadas; maiúsculas não geram duplicatas |
 
@@ -685,6 +687,9 @@ Sem `sort`, uma busca ordena por relevância, e o catálogo, pelas atualizaçõe
   "slug": "sra-shihais-remanescente-da-aura",
   "synopsis": "...",
   "status": "ONGOING",
+  "contentRating": "GENERAL",
+  "averageRating": 4.5,
+  "ratingCount": 12,
   "viewCount": 0,
   "author": { "username": "maria-leitora", "name": "Maria Leitora" },
   "genres": [{ "id": "019f...", "name": "Fantasia" }],
@@ -728,7 +733,7 @@ Página da obra.
 
 Volumes sem capítulos publicados não aparecem. A lista de capítulos fica em `GET /books/{slug}/chapters`.
 
-Responde 404 `BOOK_NOT_FOUND` se a obra não for pública.
+Responde 404 `BOOK_NOT_FOUND` se a obra não for pública. Veja também [Endereços antigos](#endereços-antigos).
 
 ### `GET /books/{slug}/chapters`
 
@@ -777,7 +782,24 @@ Texto do capítulo para leitura.
 
 `html` é gerado pelo servidor a partir do documento validado, com todo o texto escapado, e pode ser inserido na página com `[innerHTML]`. `volume`, `previous` e `next` podem ser `null`.
 
-Responde 404 com `BOOK_NOT_FOUND` ou `CHAPTER_NOT_FOUND`. Depois de renomear uma obra ou capítulo, **o endereço antigo responde 404**.
+Responde 404 com `BOOK_NOT_FOUND` ou `CHAPTER_NOT_FOUND`.
+
+Sem sessão, uma obra `ADULT` responde como inexistente em todas as rotas públicas e fica fora do catálogo. `averageRating` é `null` sem avaliações.
+
+### Endereços antigos
+
+Renomear uma obra ou um capítulo muda o endereço, mas os links antigos continuam levando a ela. Um endereço antigo de conteúdo no ar responde **404** com o endereço atual:
+
+```json
+{ "status": 404, "code": "BOOK_MOVED", "currentSlug": "sra-novo-titulo" }
+```
+
+| `code` | Quando |
+|---|---|
+| `BOOK_MOVED` | Em qualquer rota pública com o slug antigo da obra |
+| `CHAPTER_MOVED` | Em `GET /books/{slug}/chapters/{chapterSlug}`, com o slug antigo do capítulo |
+
+**O SSR deve responder 301 ao navegador** com o endereço novo, para buscadores transferirem a posição da página. A API não redireciona sozinha porque o `HttpClient` seguiria o redirecionamento sem avisar. Com a obra e o capítulo renomeados, são dois passos. Conteúdo fora do ar responde `BOOK_NOT_FOUND` ou `CHAPTER_NOT_FOUND`, sem revelar o endereço. Se outra obra passar a usar um endereço antigo, ele passa a ser dela.
 
 ## Biblioteca
 
@@ -1095,6 +1117,15 @@ Das mais recentes para as mais antigas, paginadas. `unreadOnly=true` mostra só 
 }
 ```
 
+Os demais tipos são avisos da moderação, que sempre aparecem, mesmo com o conteúdo fora do ar:
+
+| `type` | Para quem | `book`, `chapter` | `message` |
+|---|---|---|---|
+| `CONTENT_HIDDEN`, `CONTENT_RESTORED` | Quem escreveu a obra, o capítulo ou o comentário | Os do conteúdo. `chapter` só em capítulos e comentários de capítulo | O motivo informado pela moderação |
+| `REPORT_RESOLVED`, `REPORT_DISMISSED` | Quem denunciou | Ausentes | Ausente |
+
+**Trate `book`, `chapter` e `message` como opcionais.** O `slug` de um conteúdo fora do ar não abre a página pública: use o `id` nas rotas de autor.
+
 ### `GET /notifications/unread-count`
 
 Para consultar periodicamente. Não há WebSocket. **200**:
@@ -1207,7 +1238,7 @@ Encerra a denúncia. `note` é opcional, até 1000 caracteres. **200**, com o co
 | `POST /moderation/comments/{id}/hide` | Oculta o comentário. A pessoa não consegue editar nem excluir |
 | `POST /moderation/books/{id}/restore`, `POST /moderation/chapters/{id}/restore` e `POST /moderation/comments/{id}/restore` | Desfaz a ocultação |
 
-Todas exigem o motivo, de até 500 caracteres, que fica na auditoria. **204**, sem corpo.
+Todas exigem o motivo, de até 500 caracteres, que fica na auditoria. **Quem escreveu o conteúdo recebe esse motivo** em uma notificação, então escreva para a pessoa ler. **204**, sem corpo.
 
 ```json
 { "reason": "Plágio confirmado." }
@@ -1400,7 +1431,7 @@ Em `/api/v1/admin`. Responde 403 `ACCESS_DENIED` a quem não tem o papel exigido
 | `POST /admin/genres`, `POST /admin/tags` | `ADMIN`, `ROOT` | Cria. Corpo: `{ "name": "..." }`. **201** |
 | `PATCH /admin/genres/{id}`, `PATCH /admin/tags/{id}` | `ADMIN`, `ROOT` | Renomeia. Corpo: `{ "name": "..." }`. **200** |
 | `DELETE /admin/genres/{id}`, `DELETE /admin/tags/{id}` | `ADMIN`, `ROOT` | Exclui. **204** |
-| `GET /admin/users`, `GET /admin/users/{id}` | `ADMIN`, `ROOT` | Consulta usuários. `sort`: `username`, `email` ou `createdAt` |
+| `GET /admin/users`, `GET /admin/users/{id}` | `ADMIN`, `ROOT` | Consulta usuários. `query` procura pelo início do e-mail ou do nome de usuário. `sort`: `username`, `email` ou `createdAt` |
 | `PATCH /admin/users/{id}` | `ROOT` | Edita um usuário |
 | `GET /admin/audit-log` | `ADMIN`, `ROOT` | Registro das ações administrativas |
 
@@ -1437,6 +1468,19 @@ Campos ausentes não mudam. `status` é `ACTIVE` ou `SUSPENDED`. Senha e e-mail 
 | 404 | `USER_NOT_FOUND` | Usuário inexistente |
 | 409 | `USERNAME_TAKEN` | Nome de usuário ocupado ou reservado |
 | 409 | `LAST_ROOT` | Removeria a última conta root ativa |
+
+### `GET /admin/outbox-events`
+
+Eventos de notificação que esgotaram as tentativas, paginados. `ADMIN` e `ROOT`.
+
+**200**, paginado:
+```json
+{ "id": "019f...", "type": "CHAPTER_FIRST_PUBLISHED", "bookId": "019f...", "chapterId": "019f...", "attempts": 3, "lastError": "...", "createdAt": "2026-11-01T12:00:00Z", "failedAt": "2026-11-01T12:10:00Z" }
+```
+
+### `POST /admin/outbox-events/{id}/retry`
+
+Coloca o evento na fila de novo. Repetir não duplica notificações. **204**, sem corpo. **404** `FAILED_EVENT_NOT_FOUND` se o evento não existir ou não tiver falhado.
 
 ### `GET /admin/access-records`
 
@@ -1505,6 +1549,12 @@ Em desenvolvimento, a resposta também traz `groups`.
 
 **503** quando a aplicação ou o banco estão indisponíveis.
 
+### Sitemap
+
+`GET /sitemap.xml` é o índice, e `GET /sitemap/{n}.xml` traz até 10 mil endereços de obras e capítulos que um visitante pode abrir, sem conteúdo adulto. Ficam fora de `/api`, com uma hora de cache. Em produção, `/robots.txt` aponta para o índice, servido pelo NGINX.
+
+As páginas usam `/obras/{slug}` e `/obras/{slug}/capitulos/{chapterSlug}`: **o frontend precisa manter esses endereços.**
+
 ### Respostas do proxy
 
 Em produção, o NGINX responde algumas requisições antes de elas chegarem à aplicação, no mesmo formato de erro e sem `correlationId`:
@@ -1536,6 +1586,9 @@ Nada disso foi alterado no projeto Angular.
 | Manter conectado | Oferecer a opção no login, com `rememberMe` |
 | Conta | Em `/conta`: sessões abertas, troca de e-mail, exportação e exclusão |
 | Administração | Tratar 403 `RECENT_LOGIN_REQUIRED` ao trocar papel ou status, pedindo para entrar de novo |
+| SEO | No SSR: `title`, descrição e Open Graph por obra e capítulo, URL canônica e 301 em `BOOK_MOVED` e `CHAPTER_MOVED` |
+| Catálogo | Mostrar `averageRating`, ausente sem avaliações, e `ratingCount` nos cartões |
+| Notificações | Mostrar avisos da moderação, com `message` |
 | Obras adultas | Oferecer `contentRating` ao criar e editar a obra. O SSR não envia cookies, então uma obra adulta responde 404 no servidor e só aparece no navegador, com sessão |
 | Imagens | Tratar obra e perfil sem capa ou avatar até a etapa de mídia |
 | Editor | Adotar o Tiptap com as extensões da [lista do formato](#formato-do-documento-versão-1). Ele ainda não está no `package.json` |

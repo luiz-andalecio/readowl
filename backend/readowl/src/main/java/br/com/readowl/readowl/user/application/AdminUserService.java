@@ -5,6 +5,7 @@ import br.com.readowl.readowl.shared.audit.AuditContext;
 import br.com.readowl.readowl.shared.audit.AuditTrail;
 import br.com.readowl.readowl.shared.exception.ApiException;
 import br.com.readowl.readowl.shared.security.RecentLogin;
+import br.com.readowl.readowl.shared.text.Texts;
 import br.com.readowl.readowl.user.domain.Role;
 import br.com.readowl.readowl.user.domain.User;
 import br.com.readowl.readowl.user.domain.UserStatus;
@@ -16,6 +17,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.time.Instant;
 import java.util.LinkedHashMap;
+import java.util.Locale;
 import java.util.Map;
 import java.util.UUID;
 
@@ -64,9 +66,11 @@ public class AdminUserService {
      * Mostra e-mails de outras pessoas, então a leitura fica na auditoria.
      */
     @Transactional(readOnly = true)
-    public PageResponse<AdminUserView> list(Pageable pageable) {
+    public PageResponse<AdminUserView> list(String query, Pageable pageable) {
         AuditContext.markSensitiveRead();
-        return PageResponse.from(users.findAll(pageable).map(AdminUserView::from));
+        String term = Texts.blankToNull(query);
+        return PageResponse.from((term == null ? users.findAll(pageable)
+                : users.search(Texts.escapeLike(term.trim().toLowerCase(Locale.ROOT)) + "%", pageable)).map(AdminUserView::from));
     }
 
     @Transactional(readOnly = true)

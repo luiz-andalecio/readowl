@@ -62,19 +62,20 @@ public class CommentModeration {
     /**
      * Um comentário que a própria pessoa excluiu não tem o que ocultar.
      */
-    public void hide(UUID commentId) {
+    public Comment hide(UUID commentId) {
         Comment comment = comments.findById(commentId).orElseThrow(CommentService::notFound);
         if (comment.isDeleted()) {
             throw ApiException.conflict("ALREADY_HIDDEN", "Este conteúdo já está oculto.");
         }
         comment.hideByModeration(Instant.now());
         comments.flush();
+        return comment;
     }
 
     /**
      * Só desfaz a moderação: não traz de volta o que a própria pessoa excluiu.
      */
-    public void restore(UUID commentId, SessionUser actor) {
+    public Comment restore(UUID commentId, SessionUser actor) {
         Comment comment = comments.findById(commentId).orElseThrow(CommentService::notFound);
         actor.requireIndependentReview(comment.getUser().getId());
         if (!comment.isModerated()) {
@@ -85,5 +86,6 @@ public class CommentModeration {
         }
         comment.restoreFromModeration();
         comments.flush();
+        return comment;
     }
 }

@@ -72,7 +72,8 @@ public class CatalogQueries {
     }
 
     public record Row(UUID id, String title, String acronym, String slug, String synopsis, BookStatus status,
-                      ContentRating contentRating, long viewCount, String authorUsername, String authorName, int publishedChapters,
+                      ContentRating contentRating, long viewCount, Double averageRating, long ratingCount,
+                      String authorUsername, String authorName, int publishedChapters,
                       Instant lastChapterPublishedAt, Instant createdAt) {
     }
 
@@ -100,11 +101,14 @@ public class CatalogQueries {
         boolean countedTogether = ordering == Ordering.RELEVANCE_DESC;
         String sql = """
                 SELECT b.id, b.title, b.acronym, b.slug, b.synopsis, b.status, b.content_rating, b.view_count,
-                       b.last_chapter_published_at, b.created_at, u.username, u.name,
+                       b.last_chapter_published_at, b.created_at, u.username, u.name, rating.average_rating, rating.rating_count,
                        (SELECT count(*) FROM chapters c WHERE c.book_id = b.id AND c.state = 'PUBLISHED') AS published_chapters
                 """ + (countedTogether ? ", page.total" : "") + " FROM (SELECT b.id" + (countedTogether ? ", count(*) OVER () AS total " : " ") + FROM + conditions(filter, parameters)
                 + " ORDER BY " + order + ", b.id LIMIT :limit OFFSET :offset) page"
                 + " JOIN books b ON b.id = page.id JOIN users u ON u.id = b.author_id"
+                + " CROSS JOIN LATERAL (SELECT round(avg(r.score), 2)::float8 AS average_rating, count(*) AS rating_count"
+                + " FROM book_ratings r JOIN users rater ON rater.id = r.user_id"
+                + " WHERE r.book_id = b.id AND rater.status = 'ACTIVE') rating"
                 + " ORDER BY " + order + ", b.id";
         long[] total = {-1};
         List<Row> rows = jdbc.query(sql, parameters, (rs, rowNumber) -> {
@@ -178,7 +182,8 @@ public class CatalogQueries {
     private static Row row(ResultSet rs, int rowNumber) throws SQLException {
         return new Row(rs.getObject("id", UUID.class), rs.getString("title"), rs.getString("acronym"),
                 rs.getString("slug"), rs.getString("synopsis"), BookStatus.valueOf(rs.getString("status")),
-                ContentRating.valueOf(rs.getString("content_rating")), rs.getLong("view_count"), rs.getString("username"), rs.getString("name"),
+                ContentRating.valueOf(rs.getString("content_rating")), rs.getLong("view_count"), rs.getObject("average_rating", Double.class),
+                rs.getLong("rating_count"), rs.getString("username"), rs.getString("name"),
                 rs.getInt("published_chapters"), instant(rs, "last_chapter_published_at"), instant(rs, "created_at"));
     }
 

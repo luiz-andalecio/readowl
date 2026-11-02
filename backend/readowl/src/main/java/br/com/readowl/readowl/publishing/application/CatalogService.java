@@ -51,7 +51,7 @@ public class CatalogService {
     }
 
     public record CatalogEntry(UUID id, String title, String acronym, String slug, String synopsis, BookStatus status,
-                               ContentRating contentRating,
+                               ContentRating contentRating, Double averageRating, long ratingCount,
                                long viewCount, AuthorView author, List<TaxonomyItem> genres, List<TaxonomyItem> tags,
                                int publishedChapters, Instant lastChapterPublishedAt, Instant createdAt) {
     }
@@ -78,7 +78,7 @@ public class CatalogService {
         Map<UUID, List<TaxonomyItem>> tags = queries.tagsOf(ids);
 
         List<CatalogEntry> content = rows.stream().map(row -> new CatalogEntry(row.id(), row.title(), row.acronym(),
-                row.slug(), row.synopsis(), row.status(), row.contentRating(), row.viewCount(),
+                row.slug(), row.synopsis(), row.status(), row.contentRating(), row.averageRating(), row.ratingCount(), row.viewCount(),
                 new AuthorView(row.authorUsername(), row.authorName()),
                 genres.getOrDefault(row.id(), List.of()), tags.getOrDefault(row.id(), List.of()),
                 row.publishedChapters(), row.lastChapterPublishedAt(), row.createdAt())).toList();

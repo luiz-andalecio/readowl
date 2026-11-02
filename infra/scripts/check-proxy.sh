@@ -59,6 +59,8 @@ check 'corpo do monitor sem detalhes' '{"status":"UP"}' "$($CURL "$BASE_URL/heal
 for path in actuator/health actuator/metrics actuator/env actuator/heapdump readyz livez; do
     check "/$path fica fora do proxy" '404' "$(status "$BASE_URL/$path")"
 done
+check 'sitemap pelo proxy' '200' "$(status "$BASE_URL/sitemap.xml")"
+contains 'robots aponta para o sitemap' 'sitemap.xml' "$($CURL "$BASE_URL/robots.txt")"
 check 'rota desconhecida' '404' "$(status "$BASE_URL/qualquer-coisa")"
 
 CSRF="$(headers -H 'X-Forwarded-Proto: http' -H 'X-Forwarded-Host: outro.example.com' "$BASE_URL/api/v1/auth/csrf" | grep -i '^set-cookie: __Host-XSRF-TOKEN=')"

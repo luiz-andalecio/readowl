@@ -149,6 +149,9 @@ contains 'catalogo pode ficar em cache' 'max-age=30' "$HEADERS"
 
 request GET /api/v1/users/me
 check 'rota privada anonima' '401' "$STATUS"
+request GET /sitemap.xml
+check 'sitemap publico' '200' "$STATUS"
+contains 'sitemap com o endereco publico' 'https://readowl.test/sitemap/1.xml' "$(cat "$WORK/body")"
 request GET /actuator/health
 check 'saude fora da porta publica' '401' "$STATUS"
 request GET /actuator/metrics

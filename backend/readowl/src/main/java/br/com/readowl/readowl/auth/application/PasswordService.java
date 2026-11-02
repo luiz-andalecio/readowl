@@ -28,10 +28,12 @@ public class PasswordService {
     private final RateLimiter rateLimiter;
     private final TransactionOperations transaction;
     private final SecurityEvents events;
+    private final PasswordPolicy passwordPolicy;
 
     PasswordService(UserService users, AccountTokens tokens, AccountMails mails, KnownDevices devices,
                     SessionManager sessions, PasswordEncoder passwordEncoder, RateLimiter rateLimiter,
-                    TransactionOperations transaction, SecurityEvents events) {
+                    TransactionOperations transaction, SecurityEvents events, PasswordPolicy passwordPolicy) {
+        this.passwordPolicy = passwordPolicy;
         this.events = events;
         this.users = users;
         this.tokens = tokens;
@@ -63,6 +65,7 @@ public class PasswordService {
      */
     public void reset(String token, String newPassword, String clientIp) {
         rateLimiter.acquire(RateLimitPolicy.TOKEN_IP, clientIp);
+        passwordPolicy.requireAcceptable(newPassword);
         String passwordHash = passwordEncoder.encode(newPassword);
         User user = transaction.execute(status -> {
             User consumed = tokens.consumePasswordReset(token);
@@ -91,6 +94,7 @@ public class PasswordService {
         if (!passwordEncoder.matches(currentPassword, user.getPasswordHash())) {
             throw ApiException.badRequest("INVALID_CURRENT_PASSWORD", "A senha atual está incorreta.");
         }
+        passwordPolicy.requireAcceptable(newPassword);
         String passwordHash = passwordEncoder.encode(newPassword);
         transaction.executeWithoutResult(status -> {
             users.changePasswordHash(user.getId(), passwordHash);

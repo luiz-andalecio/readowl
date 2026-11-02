@@ -4,6 +4,7 @@ import org.springframework.jdbc.core.namedparam.MapSqlParameterSource;
 import org.springframework.jdbc.core.namedparam.NamedParameterJdbcTemplate;
 import org.springframework.stereotype.Repository;
 
+import java.time.Instant;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -88,6 +89,49 @@ public class NotificationQueue {
 
     public void recordEventFailure(UUID eventId, String error, int maxAttempts) {
         jdbc.update(RECORD_EVENT_FAILURE, failure(eventId, error, maxAttempts));
+    }
+
+    /**
+     * Quem já excluiu a conta não recebe mais nada, e o motivo não fica guardado sem necessidade.
+     */
+    public void insertNotice(UUID userId, String type, UUID bookId, UUID chapterId, String message) {
+        jdbc.update("""
+                INSERT INTO notifications (id, user_id, type, book_id, chapter_id, message, created_at)
+                SELECT uuidv7(), u.id, :type, CAST(:bookId AS uuid), CAST(:chapterId AS uuid), CAST(:message AS varchar), now()
+                FROM users u WHERE u.id = :userId AND u.status <> 'DELETED'
+                """, new MapSqlParameterSource().addValue("userId", userId).addValue("type", type)
+                .addValue("bookId", bookId).addValue("chapterId", chapterId).addValue("message", message));
+    }
+
+    public record FailedEvent(UUID id, String type, UUID bookId, UUID chapterId, int attempts, String lastError,
+                              Instant createdAt, Instant failedAt) {
+    }
+
+    public long countFailedEvents() {
+        Long total = jdbc.queryForObject("SELECT count(*) FROM outbox_events WHERE failed_at IS NOT NULL", Map.of(), Long.class);
+        return total == null ? 0 : total;
+    }
+
+    public List<FailedEvent> failedEvents(int limit, long offset) {
+        return jdbc.query("""
+                SELECT id, type, book_id, chapter_id, attempts, last_error, created_at, failed_at FROM outbox_events
+                WHERE failed_at IS NOT NULL ORDER BY failed_at DESC, id LIMIT :limit OFFSET :offset
+                """, Map.of("limit", limit, "offset", offset), (rs, row) -> new FailedEvent(rs.getObject("id", UUID.class),
+                rs.getString("type"), rs.getObject("book_id", UUID.class), rs.getObject("chapter_id", UUID.class),
+                rs.getInt("attempts"), rs.getString("last_error"), rs.getTimestamp("created_at").toInstant(),
+                rs.getTimestamp("failed_at").toInstant()));
+    }
+
+    /**
+     * Reprocessar é seguro: a restrição (user_id, event_id) impede notificações repetidas.
+     *
+     * @return false se o evento não existe ou não falhou
+     */
+    public boolean retryFailedEvent(UUID id) {
+        return jdbc.update("""
+                UPDATE outbox_events SET failed_at = NULL, attempts = 0, last_error = NULL, next_attempt_at = now()
+                WHERE id = :id AND failed_at IS NOT NULL
+                """, Map.of("id", id)) == 1;
     }
 
     public int purgeProcessedEvents() {
