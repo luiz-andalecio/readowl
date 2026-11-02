@@ -1,6 +1,7 @@
 package br.com.readowl.readowl.privacy.application;
 
 import br.com.readowl.readowl.community.domain.Comment;
+import br.com.readowl.readowl.media.application.StoredImages;
 import br.com.readowl.readowl.shared.config.ReadowlProperties;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -29,7 +30,10 @@ public class RetentionTasks {
     private final RetainedBooks books;
     private final ReadowlProperties.Retention retention;
 
-    RetentionTasks(JdbcTemplate jdbc, RetainedBooks books, ReadowlProperties properties) {
+    private final StoredImages images;
+
+    RetentionTasks(JdbcTemplate jdbc, RetainedBooks books, ReadowlProperties properties, StoredImages images) {
+        this.images = images;
         this.jdbc = jdbc;
         this.books = books;
         this.retention = properties.retention();
@@ -38,6 +42,7 @@ public class RetentionTasks {
     @Scheduled(fixedDelayString = "PT24H", initialDelayString = "PT1H")
     public void run() {
         step("contas nao confirmadas", this::purgeUnverifiedAccounts);
+        step("imagens que eram prova em denuncias", images::releaseFilesNoLongerHeld);
         step("notificacoes", () -> jdbc.update(
                 "DELETE FROM notifications WHERE created_at < now() - make_interval(secs => ?)", seconds(retention.notifications())));
         step("texto de comentarios excluidos", () -> jdbc.update("""

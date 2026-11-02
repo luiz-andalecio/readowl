@@ -24,7 +24,8 @@ import java.util.function.Consumer;
 /**
  * Valida e refaz as imagens guardadas no armazenamento. O formato vem dos próprios bytes, e não do que o navegador ou o site
  * de origem declaram. O tamanho é lido antes de decodificar, o que barra imagens que ocupam gigabytes depois de abertas. Refazer
- * a imagem descarta metadados, como o local da foto, e qualquer conteúdo escondido no arquivo.
+ * a imagem descarta metadados, como o local da foto, e qualquer conteúdo escondido no arquivo. De um GIF ou WebP animado, fica
+ * só o primeiro quadro.
  */
 final class ImageFiles {
 
@@ -32,7 +33,15 @@ final class ImageFiles {
 
     private static final byte[] JPEG = {(byte) 0xFF, (byte) 0xD8, (byte) 0xFF};
     private static final byte[] PNG = {(byte) 0x89, 'P', 'N', 'G', '\r', '\n', 0x1A, '\n'};
+    private static final byte[] GIF = {'G', 'I', 'F', '8'};
+    private static final byte[] RIFF = {'R', 'I', 'F', 'F'};
+    private static final byte[] WEBP = {'W', 'E', 'B', 'P'};
     private static final float JPEG_QUALITY = 0.9f;
+
+    static {
+        // O leitor de WebP é um plugin: registra de novo com as classes da aplicação, seja qual for a thread que usar primeiro.
+        ImageIO.scanForPlugins();
+    }
 
     private ImageFiles() {
     }
@@ -56,8 +65,10 @@ final class ImageFiles {
             int skip = Math.max(1, Math.min(size.width() / limit.width(), size.height() / limit.height()));
             parameters.setSourceSubsampling(skip, skip, 0, 0);
             return encode(flatten(reader.read(0, parameters), limit));
-        } catch (IOException | IllegalArgumentException | IllegalStateException | ArrayIndexOutOfBoundsException
-                 | NegativeArraySizeException ex) {
+        } catch (ApiException ex) {
+            throw ex;
+        } catch (IOException | RuntimeException ex) {
+            // O arquivo vem de fora, e um arquivo malformado pode falhar de muitas formas dentro dos leitores.
             throw invalid();
         } finally {
             reader.dispose();
@@ -70,6 +81,12 @@ final class ImageFiles {
         }
         if (startsWith(file, PNG)) {
             return "png";
+        }
+        if (startsWith(file, GIF)) {
+            return "gif";
+        }
+        if (startsWith(file, RIFF) && file.length > 12 && Arrays.equals(file, 8, 12, WEBP, 0, WEBP.length)) {
+            return "webp";
         }
         throw invalid();
     }
@@ -115,6 +132,6 @@ final class ImageFiles {
     }
 
     private static ApiException invalid() {
-        return ApiException.badRequest("INVALID_IMAGE", "Envie uma imagem JPEG ou PNG válida.");
+        return ApiException.badRequest("INVALID_IMAGE", "Envie uma imagem JPEG, PNG, WebP ou GIF válida.");
     }
 }

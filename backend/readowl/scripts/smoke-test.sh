@@ -192,7 +192,15 @@ check 'acao na auditoria' 'POST /api/v1/admin/banners|SUCCESS' "$(sql 'SELECT ac
 
 AVATAR_STATUS="$(curl -s -o /dev/null -w '%{http_code}' -X PUT "$BASE/api/v1/users/me/avatar" -H 'X-Forwarded-Proto: https' \
     -H "Cookie: $BOTH" -H "X-XSRF-TOKEN: $TOKEN" -H 'Content-Type: image/png' --data-binary 'x')"
-check 'sem armazenamento, o envio de foto responde 503' '503' "$AVATAR_STATUS"
+check 'arquivo invalido recusado antes de chegar ao armazenamento' '400' "$AVATAR_STATUS"
+# O 503 prova que a imagem foi lida: o leitor de WebP e um plugin, que precisa ser encontrado dentro do JAR.
+for IMAGE in 'webp UklGRiIAAABXRUJQVlA4IBYAAAAwAQCdASoBAAEADsD+JaQAA3AAAAAA' 'gif R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7'; do
+    FORMAT="${IMAGE%% *}"
+    printf '%s' "${IMAGE#* }" | base64 -d > "$WORK/image.$FORMAT"
+    AVATAR_STATUS="$(curl -s -o /dev/null -w '%{http_code}' -X PUT "$BASE/api/v1/users/me/avatar" -H 'X-Forwarded-Proto: https' \
+        -H "Cookie: $BOTH" -H "X-XSRF-TOKEN: $TOKEN" -H "Content-Type: image/$FORMAT" --data-binary "@$WORK/image.$FORMAT")"
+    check "$FORMAT lido dentro do JAR, sem armazenamento responde 503" '503' "$AVATAR_STATUS"
+done
 
 refused_to_app 'DELETE FROM audit_log'
 refused_to_app 'UPDATE audit_log SET outcome = outcome'

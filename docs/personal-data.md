@@ -40,6 +40,7 @@ Os prazos ficam em `readowl.retention.*`. A tarefa diária `RetentionTasks` apli
 | Obras, revisões publicadas e comentários | Várias | Enquanto a conta existir | Serviço |
 | Foto de perfil | Armazenamento S3 | Até a pessoa trocar ou excluir a conta | Perfil público. Refeita sem metadados |
 | Capa e banner da obra | Armazenamento S3 | Até a pessoa trocar ou excluir a obra | Obra pública. Refeitos sem metadados |
+| Foto, capa ou banner citados em denúncia aberta | Armazenamento S3 e `held_image_files` | Até encerrar a última denúncia, mesmo depois de trocar a imagem ou excluir a obra ou a conta | Prova para a moderação |
 | Endereço da imagem de um comentário | `comments.image_url` | Enquanto o comentário existir, ou 30 dias depois de excluído | Comentário público |
 | Endereço da foto do Google ou hospedada | `users.avatar_url` | Até a pessoa trocar, remover ou excluir a conta | Perfil público |
 | Links externos | `user_links` | Até a pessoa trocar ou excluir a conta | Perfil público |

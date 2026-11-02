@@ -87,7 +87,7 @@ class BookController {
     record DeleteBookRequest(String confirmTitle) {
     }
 
-    @PutMapping(value = "/books/{id}/cover", consumes = {MediaType.IMAGE_JPEG_VALUE, MediaType.IMAGE_PNG_VALUE})
+    @PutMapping(value = "/books/{id}/cover", consumes = {MediaType.IMAGE_JPEG_VALUE, MediaType.IMAGE_PNG_VALUE, ImageUploads.WEBP, MediaType.IMAGE_GIF_VALUE})
     @RateLimited(RateLimitPolicy.IMAGE_ACCOUNT)
     BookDetails uploadCover(@AuthenticationPrincipal SessionUser principal, @PathVariable UUID id, HttpServletRequest request)
             throws IOException {
@@ -108,7 +108,7 @@ class BookController {
         images.remove(id, StoredImageType.COVER, principal);
     }
 
-    @PutMapping(value = "/books/{id}/banner", consumes = {MediaType.IMAGE_JPEG_VALUE, MediaType.IMAGE_PNG_VALUE})
+    @PutMapping(value = "/books/{id}/banner", consumes = {MediaType.IMAGE_JPEG_VALUE, MediaType.IMAGE_PNG_VALUE, ImageUploads.WEBP, MediaType.IMAGE_GIF_VALUE})
     @RateLimited(RateLimitPolicy.IMAGE_ACCOUNT)
     BookDetails uploadBanner(@AuthenticationPrincipal SessionUser principal, @PathVariable UUID id, HttpServletRequest request)
             throws IOException {

@@ -109,7 +109,7 @@ class BannerController {
         return banners.update(id, body.version(), body.data());
     }
 
-    @PutMapping(value = "/admin/banners/{id}/image", consumes = {MediaType.IMAGE_JPEG_VALUE, MediaType.IMAGE_PNG_VALUE})
+    @PutMapping(value = "/admin/banners/{id}/image", consumes = {MediaType.IMAGE_JPEG_VALUE, MediaType.IMAGE_PNG_VALUE, ImageUploads.WEBP, MediaType.IMAGE_GIF_VALUE})
     @RateLimited(RateLimitPolicy.IMAGE_ACCOUNT)
     BannerView uploadImage(@PathVariable UUID id, HttpServletRequest request) throws IOException {
         return images.replaceWithFile(id, ImageUploads.read(request));

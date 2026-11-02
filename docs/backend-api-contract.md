@@ -408,7 +408,7 @@ Define a foto de perfil, por uma das duas formas abaixo. A resposta é a mesma, 
 { "url": "https://i.imgur.com/minha-foto.jpg" }
 ```
 
-**Arquivo**: o corpo é a própria imagem, sem formulário, com `Content-Type: image/jpeg` ou `image/png`. Até 2 MiB e 300x300 pixels: **recorte no navegador antes de enviar**. A imagem é refeita em JPEG, e transparência vira fundo branco.
+**Arquivo**: o corpo é a própria imagem, sem formulário, com `Content-Type: image/jpeg`, `image/png`, `image/webp` ou `image/gif`. Até 2 MiB e 300x300 pixels: **recorte no navegador antes de enviar**. A imagem é refeita em JPEG, e transparência vira fundo branco.
 
 **200**
 ```json
@@ -418,7 +418,7 @@ Define a foto de perfil, por uma das duas formas abaixo. A resposta é a mesma, 
 | Status | `code` | Quando |
 |---|---|---|
 | 400 | `INVALID_AVATAR_URL` | Imagem hospedada fora dos sites permitidos ou sem `https://` |
-| 400 | `INVALID_IMAGE` | O conteúdo não é um JPEG ou PNG válido, mesmo com o tipo certo |
+| 400 | `INVALID_IMAGE` | O conteúdo não é um JPEG, PNG, WebP ou GIF válido, mesmo com o tipo certo |
 | 400 | `AVATAR_TOO_LARGE` | Mais de 300 pixels de largura ou altura |
 | 400 | `AVATAR_FILE_TOO_LARGE` | Mais de 2 MiB |
 | 415 | `UNSUPPORTED_MEDIA_TYPE` | Outro `Content-Type` |
@@ -716,7 +716,7 @@ Aceita os campos de `POST /books` e `status`. Campos ausentes não mudam. `relea
 
 Valem para quem pode editar a obra. O `PUT` aceita duas formas, e o resultado é o mesmo: **uma cópia no armazenamento**, que continua no ar mesmo que a imagem saia do site de origem.
 
-**Arquivo:** o corpo é a própria imagem, sem formulário, com `Content-Type: image/jpeg` ou `image/png`.
+**Arquivo:** o corpo é a própria imagem, sem formulário, com `Content-Type: image/jpeg`, `image/png`, `image/webp` ou `image/gif`.
 
 **Link:** com `Content-Type: application/json`, em um dos [sites permitidos](#imagens-externas). O servidor baixa a imagem na hora, o que pode levar alguns segundos.
 
@@ -730,7 +730,7 @@ Valem para quem pode editar a obra. O `PUT` aceita duas formas, e o resultado é
 | Proporção, com 2% de tolerância | 3:4 | 3:1 |
 | Reduzida para caber em | 1200x1600 | 2400x800 |
 
-Vale para as duas: JPEG ou PNG, até 5 MiB e até 6000 pixels de largura ou altura. A imagem é refeita em JPEG, sem metadados, e transparência vira fundo branco. O limite é de 20 envios por hora por conta, somando capas e banners. Ao trocar uma imagem, o arquivo anterior é apagado.
+Vale para as duas: JPEG, PNG, WebP ou GIF, até 5 MiB e até 6000 pixels de largura ou altura. A imagem é refeita em JPEG, sem metadados, e transparência vira fundo branco. **De um GIF ou WebP animado, fica só o primeiro quadro.** O limite é de 20 envios por hora por conta, somando capas e banners. Ao trocar uma imagem, o arquivo anterior é apagado, salvo se for prova em uma [denúncia aberta](#denúncias).
 
 **200**, com o corpo de `GET /books/{id}/details`, que traz `coverUrl`, `bannerUrl` e a nova `version`. Use-a na próxima edição da obra. `bannerUrl` também aparece em `GET /books/{slug}` e é `null` sem banner.
 
@@ -738,7 +738,7 @@ Vale para as duas: JPEG ou PNG, até 5 MiB e até 6000 pixels de largura ou altu
 |---|---|---|
 | 400 | `INVALID_COVER_URL`, `INVALID_BANNER_URL` | O link não é `https://` completo ou está fora dos sites permitidos |
 | 400 | `IMAGE_DOWNLOAD_FAILED` | O site não entregou a imagem: endereço errado, fora do ar, lento demais ou redirecionando para outro lugar |
-| 400 | `INVALID_IMAGE` | O conteúdo não é um JPEG ou PNG válido, mesmo com o tipo certo |
+| 400 | `INVALID_IMAGE` | O conteúdo não é um JPEG, PNG, WebP ou GIF válido, mesmo com o tipo certo |
 | 400 | `IMAGE_TOO_SMALL`, `IMAGE_WRONG_PROPORTION` | Fora das regras acima. A resposta traz `minWidth` e `minHeight` |
 | 400 | `IMAGE_TOO_LARGE` | Mais de 6000 pixels de largura ou altura |
 | 400 | `IMAGE_FILE_TOO_LARGE` | Mais de 5 MiB |
@@ -1302,6 +1302,8 @@ Exige sessão. Só o que está público pode ser denunciado.
 
 Limite de 10 denúncias por hora por conta e de 30 por IP.
 
+A cópia guardada na denúncia cita os endereços da capa, do banner, da foto ou da imagem do comentário. **Enquanto a denúncia estiver aberta, os arquivos que estão no nosso armazenamento continuam no ar**, mesmo que a pessoa troque a imagem, a moderação a remova ou a obra ou a conta sejam excluídas. Eles saem quando a última denúncia que os cita for encerrada. Imagens por link, em outros sites, não dependem de nós e podem sair do ar antes da análise.
+
 | Status | `code` | Quando |
 |---|---|---|
 | 403 | `OWN_CONTENT_REPORT` | O conteúdo é da própria pessoa |
@@ -1361,7 +1363,7 @@ Encerra a denúncia. `note` é opcional, até 1000 caracteres. **200**, com o co
 | `POST /moderation/comments/{id}/hide` | Oculta o comentário. A pessoa não consegue editar nem excluir |
 | `POST /moderation/books/{id}/restore`, `POST /moderation/chapters/{id}/restore` e `POST /moderation/comments/{id}/restore` | Desfaz a ocultação |
 
-`POST /moderation/books/{id}/remove-cover`, `POST /moderation/books/{id}/remove-banner` e `POST /moderation/users/{id}/remove-avatar` retiram só a imagem imprópria, sem tirar o resto do ar, e o arquivo sai do armazenamento. Respondem 409 `NO_COVER`, `NO_BOOK_BANNER` ou `NO_AVATAR` se não houver imagem.
+`POST /moderation/books/{id}/remove-cover`, `POST /moderation/books/{id}/remove-banner` e `POST /moderation/users/{id}/remove-avatar` retiram só a imagem imprópria, sem tirar o resto do ar. O arquivo sai do armazenamento na hora ou, se for prova em uma denúncia aberta, quando ela for encerrada. Respondem 409 `NO_COVER`, `NO_BOOK_BANNER` ou `NO_AVATAR` se não houver imagem.
 
 Todas exigem o motivo, de até 500 caracteres, que fica na auditoria. **Quem escreveu o conteúdo recebe esse motivo** em uma notificação, então escreva para a pessoa ler. **204**, sem corpo.
 
@@ -1498,9 +1500,9 @@ Salvamento automático. Envie a `version` que você leu.
 | Marcas | `bold`, `italic`, `underline`, `strike` |
 | Alinhamento | `textAlign` em `paragraph` e `heading`: `left`, `center`, `right` ou `justify` |
 
-**Links não são aceitos nesta versão.** O limite é de 2 MiB de JSON, 500 mil caracteres de texto, 200 imagens e 20 níveis de aninhamento.
+**Links não são aceitos nesta versão.** O limite é de 2 MiB de JSON, 500 mil caracteres de texto, 20 imagens e 20 níveis de aninhamento.
 
-`image` é um bloco, não fica dentro de um parágrafo. `src` é obrigatório e precisa estar em um dos [sites permitidos](#imagens-externas). `alt` e `title` são opcionais, com até 500 caracteres. O servidor guarda só o endereço e nunca baixa a imagem, então não há como enviar um arquivo para um capítulo. Um capítulo só com imagens pode ser publicado.
+`image` é um bloco, não fica dentro de um parágrafo. `src` é obrigatório e precisa estar em um dos [sites permitidos](#imagens-externas). `alt` e `title` são opcionais, com até 500 caracteres. O servidor guarda só o endereço e nunca baixa a imagem, então não há como enviar um arquivo para um capítulo. Imagens não contam como palavras: um capítulo só com imagens não pode ser publicado.
 
 O HTML de leitura é gerado pelo servidor, com todo texto escapado. O alinhamento vira as classes `text-left`, `text-center`, `text-right` e `text-justify`, que o frontend precisa estilizar. Cada imagem vira `<img src alt title loading="lazy" referrerpolicy="no-referrer">`.
 
@@ -1517,6 +1519,7 @@ Publica o rascunho na versão que o usuário viu.
 | Status | `code` | Quando |
 |---|---|---|
 | 400 | `EMPTY_CHAPTER` | Capítulo sem texto |
+| 400 | `CHAPTER_TOO_SHORT` | Menos de 750 palavras. A resposta traz `minWords` e `words`. O rascunho pode ter menos, mas só é publicado com esse mínimo |
 | 409 | `DRAFT_CONFLICT` | O rascunho mudou depois de `draftVersion` |
 | 409 | `CHAPTER_UNDER_MODERATION` | O capítulo foi ocultado pela moderação. Vale também para administradores |
 | 409 | `REVISION_LIMIT_REACHED` | O capítulo atingiu a cota de revisões publicadas |
@@ -1717,7 +1720,7 @@ Nada disso foi alterado no projeto Angular.
 | Catálogo | Mostrar `averageRating`, ausente sem avaliações, e `ratingCount` nos cartões |
 | Notificações | Mostrar avisos da moderação, com `message` |
 | Imagens | Limitar `img-src` aos domínios de `GET /image-hosts`, mais o endereço do armazenamento de imagens |
-| Capas e banners | Recortar no navegador antes de enviar: 3:4 e no mínimo 600x800 na capa, 3:1 e no mínimo 1200x400 nos banners. Só JPEG e PNG são aceitos, então um link em WebP ou GIF é recusado com `INVALID_IMAGE`: nesse caso, peça o arquivo |
+| Capas e banners | Recortar no navegador antes de enviar: 3:4 e no mínimo 600x800 na capa, 3:1 e no mínimo 1200x400 nos banners. JPEG, PNG, WebP e GIF são aceitos, mas a cópia guardada não é animada: avise que um GIF ou WebP animado fica só com o primeiro quadro |
 | Foto de perfil | Recortar e reduzir no navegador para no máximo 300x300 antes de enviar |
 | Links do autor | Abrir com `rel="nofollow noopener ugc"`, porque são informados por usuários |
 | Obras adultas | Oferecer `contentRating` ao criar e editar a obra. O SSR não envia cookies, então uma obra adulta responde 404 no servidor e só aparece no navegador, com sessão |

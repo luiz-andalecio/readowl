@@ -85,6 +85,11 @@ public class PublicationService {
         if (rendered.isBlank()) {
             throw ApiException.badRequest("EMPTY_CHAPTER", "Escreva o capítulo antes de publicá-lo.");
         }
+        if (rendered.wordCount() < limits.chapterMinWords()) {
+            throw ApiException.badRequest("CHAPTER_TOO_SHORT", "O capítulo precisa ter pelo menos " + limits.chapterMinWords() + " palavras para ser publicado.")
+                    .withProperty("minWords", limits.chapterMinWords())
+                    .withProperty("words", rendered.wordCount());
+        }
         boolean wasPublished = chapter.isPublished();
         ChapterRevision current = chapter.getPublishedRevision();
         boolean unchanged = current != null && jsonMapper.readTree(current.getDocument()).equals(document);

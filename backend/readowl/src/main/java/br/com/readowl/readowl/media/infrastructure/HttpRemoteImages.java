@@ -87,7 +87,7 @@ class HttpRemoteImages implements RemoteImages {
 
     private static HttpRequest request(URI uri) {
         return HttpRequest.newBuilder(uri).timeout(RESPONSE_TIMEOUT)
-                .header("Accept", "image/jpeg,image/png")
+                .header("Accept", "image/jpeg,image/png,image/webp,image/gif")
                 .header("User-Agent", "Readowl")
                 .GET().build();
     }

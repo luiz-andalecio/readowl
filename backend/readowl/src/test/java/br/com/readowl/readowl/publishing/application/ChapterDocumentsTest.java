@@ -82,11 +82,21 @@ class ChapterDocumentsTest {
     }
 
     @Test
-    void aChapterWithOnlyImagesIsNotBlankButHasNoText() {
+    void aChapterWithOnlyImagesIsBlank() {
         ChapterDocuments.Rendered rendered = render(image("{\"src\":\"https://i.imgur.com/a.jpg\"}"));
 
-        assertThat(rendered.isBlank()).isFalse();
-        assertThat(rendered.plainText()).isEmpty();
+        assertThat(rendered.isBlank()).isTrue();
+        assertThat(rendered.wordCount()).isZero();
+    }
+
+    @Test
+    void wordsAreCountedInAnyLanguageAndAcrossBlocks() {
+        assertThat(render(paragraph("Era uma vez, em São João — há muito tempo.")).wordCount()).isEqualTo(9);
+        assertThat(render(paragraph("guarda-chuva 123")).wordCount()).isEqualTo(2);
+        assertThat(render(paragraph(" — ... !")).wordCount()).isZero();
+        assertThat(render("""
+                {"type":"doc","content":[{"type":"paragraph","content":[{"type":"text","text":"um"}]},
+                {"type":"paragraph","content":[{"type":"text","text":"dois"},{"type":"hardBreak"},{"type":"text","text":"três"}]}]}""").wordCount()).isEqualTo(3);
     }
 
     @Test
@@ -99,10 +109,10 @@ class ChapterDocumentsTest {
     @Test
     void thereIsALimitOfImages() {
         String one = "{\"type\":\"image\",\"attrs\":{\"src\":\"https://i.imgur.com/a.jpg\"}}";
-        String allowed = "{\"type\":\"doc\",\"content\":[" + String.join(",", java.util.Collections.nCopies(200, one)) + "]}";
-        String tooMany = "{\"type\":\"doc\",\"content\":[" + String.join(",", java.util.Collections.nCopies(201, one)) + "]}";
+        String allowed = "{\"type\":\"doc\",\"content\":[" + String.join(",", java.util.Collections.nCopies(20, one)) + "]}";
+        String tooMany = "{\"type\":\"doc\",\"content\":[" + String.join(",", java.util.Collections.nCopies(21, one)) + "]}";
 
-        assertThat(render(allowed).isBlank()).isFalse();
+        assertThat(render(allowed).html()).contains("<img ");
         assertThatThrownBy(() -> render(tooMany)).isInstanceOf(ApiException.class);
     }
 

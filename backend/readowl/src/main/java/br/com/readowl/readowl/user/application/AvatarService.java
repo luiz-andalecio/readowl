@@ -46,11 +46,11 @@ public class AvatarService {
     }
 
     public AvatarResponse upload(UUID userId, byte[] file) {
+        byte[] image = AvatarImages.normalize(file);
         ObjectStorage objects = storage.getIfAvailable();
         if (objects == null) {
             throw ApiException.serviceUnavailable("AVATARS_UNAVAILABLE", "O envio de fotos não está disponível.");
         }
-        byte[] image = AvatarImages.normalize(file);
         String key = "avatars/" + userId + "/" + UUID.randomUUID() + ".jpg";
         try {
             objects.put(key, image, AvatarImages.CONTENT_TYPE);

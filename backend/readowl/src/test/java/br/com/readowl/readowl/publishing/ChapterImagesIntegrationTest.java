@@ -85,8 +85,20 @@ class ChapterImagesIntegrationTest {
     }
 
     @Test
-    void aChapterWithOnlyImagesCanBePublished() {
-        assertThat(publishAndRead(save(List.of(imageBlock(IMAGE))))).contains("<img src=\"" + IMAGE + "\"");
+    void aChapterWithOnlyImagesCannotBePublished() {
+        ApiClient.Response saved = save(List.of(imageBlock(IMAGE)));
+        assertThat(saved.status()).isEqualTo(200);
+
+        ApiClient.Response refused = author.post("/api/v1/chapters/" + chapter + "/publish", body("draftVersion", saved.json().at("/version").asLong()));
+
+        assertThat(refused.status()).isEqualTo(400);
+        assertThat(refused.code()).isEqualTo("EMPTY_CHAPTER");
+    }
+
+    @Test
+    void thereIsALimitOf20ImagesPerChapter() {
+        assertThat(save(java.util.Collections.nCopies(20, imageBlock(IMAGE))).status()).isEqualTo(200);
+        assertThat(save(java.util.Collections.nCopies(21, imageBlock(IMAGE))).code()).isEqualTo("INVALID_DOCUMENT");
     }
 
     @Test

@@ -25,7 +25,7 @@ public record ReadowlProperties(@NotBlank String publicUrl, @NotBlank @Email Str
      * Cotas de conteúdo. Protegem o armazenamento contra abuso.
      */
     public record Limits(@Positive int booksPerAccount, @Positive int volumesPerBook, @Positive int chaptersPerBook,
-                         @Positive int revisionsPerChapter, @Positive long storedBytesPerAccount) {
+                         @Positive int revisionsPerChapter, @Positive long storedBytesPerAccount, @Positive int chapterMinWords) {
     }
 
     /**

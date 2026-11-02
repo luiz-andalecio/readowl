@@ -104,7 +104,7 @@ class HttpRemoteImagesTest {
     @Test
     void downloadsTheImageAskingForTheFormatsWeAccept() {
         assertThat(remote.download(url("/imagem"))).isEqualTo(IMAGE);
-        assertThat(accepts).containsExactly("image/jpeg,image/png");
+        assertThat(accepts).containsExactly("image/jpeg,image/png,image/webp,image/gif");
     }
 
     @Test

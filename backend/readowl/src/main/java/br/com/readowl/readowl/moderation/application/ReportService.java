@@ -4,6 +4,7 @@ import br.com.readowl.readowl.book.application.PublicBooks;
 import br.com.readowl.readowl.book.domain.Book;
 import br.com.readowl.readowl.community.application.CommentModeration;
 import br.com.readowl.readowl.community.domain.Comment;
+import br.com.readowl.readowl.media.application.StoredImages;
 import br.com.readowl.readowl.moderation.domain.Report;
 import br.com.readowl.readowl.moderation.domain.ReportReason;
 import br.com.readowl.readowl.moderation.domain.ReportStatus;
@@ -54,10 +55,12 @@ public class ReportService {
     private final RateLimiter rateLimiter;
     private final TransactionOperations transaction;
     private final NotificationService notifications;
+    private final StoredImages images;
 
     ReportService(ReportRepository reports, PublicBooks publicBooks, PublicChapters publicChapters,
                   CommentModeration comments, UserService users, AuditTrail audit, RateLimiter rateLimiter,
-                  TransactionOperations transaction, NotificationService notifications) {
+                  TransactionOperations transaction, NotificationService notifications, StoredImages images) {
+        this.images = images;
         this.notifications = notifications;
         this.reports = reports;
         this.publicBooks = publicBooks;
@@ -162,6 +165,7 @@ public class ReportService {
         }
         report.close(status, Texts.blankToNull(note), users.requireById(principal.id()), Instant.now());
         reports.saveAndFlush(report);
+        images.releaseFilesNoLongerHeld();
         // Só o resultado: a nota é interna, e dizer o que foi feito com o alvo exporia outra pessoa.
         notifications.notifyModeration(report.getReporter().getId(), status == ReportStatus.RESOLVED
                 ? NotificationType.REPORT_RESOLVED : NotificationType.REPORT_DISMISSED, null, null, null);

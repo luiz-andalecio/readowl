@@ -1,5 +1,6 @@
 package br.com.readowl.readowl.user.api;
 
+import br.com.readowl.readowl.media.api.ImageUploads;
 import br.com.readowl.readowl.media.application.AvatarImages;
 import br.com.readowl.readowl.shared.api.PublicCache;
 import br.com.readowl.readowl.shared.audit.SecurityEvents;
@@ -76,7 +77,7 @@ class UserController {
     /**
      * O corpo é a própria imagem, sem formulário. O limite vale mesmo sem Content-Length.
      */
-    @PutMapping(value = "/me/avatar", consumes = {MediaType.IMAGE_JPEG_VALUE, MediaType.IMAGE_PNG_VALUE})
+    @PutMapping(value = "/me/avatar", consumes = {MediaType.IMAGE_JPEG_VALUE, MediaType.IMAGE_PNG_VALUE, ImageUploads.WEBP, MediaType.IMAGE_GIF_VALUE})
     @RateLimited(RateLimitPolicy.AVATAR_ACCOUNT)
     AvatarService.AvatarResponse uploadAvatar(@AuthenticationPrincipal SessionUser principal, HttpServletRequest request)
             throws IOException {

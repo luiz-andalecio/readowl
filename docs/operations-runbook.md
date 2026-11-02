@@ -30,7 +30,7 @@ O site fica em `https://localhost:8443`, com certificado autoassinado, e os e-ma
 
 Crie um bucket compatível com S3, com leitura pública das imagens, e preencha as variáveis `S3_*`. No Cloudflare R2, use `S3_ENDPOINT=https://<id da conta>.r2.cloudflarestorage.com` e `S3_REGION=auto`, e ligue um domínio próprio ao bucket para `S3_PUBLIC_URL`, porque o endereço `r2.dev` tem limites e não é indicado para produção. As credenciais só precisam gravar e apagar nesse bucket. Com o armazenamento pela metade, a aplicação não sobe. Sem nenhuma dessas variáveis, ela sobe e o envio de fotos responde 503. O log `Foto nao apagada` indica um arquivo sem uso, que precisa ser apagado à mão.
 
-Fotos de perfil, capas e banners ficam nesse bucket. Sem ele, o envio dessas imagens responde 503. Para baixar capas e banners por link, a aplicação precisa de saída HTTPS para os domínios de `readowl.images.allowed-hosts`. Um arquivo que sobrar aparece no log como `Imagem nao apagada`, com a chave, para ser apagado à mão.
+Fotos de perfil, capas e banners ficam nesse bucket. Sem ele, o envio dessas imagens responde 503. Para baixar capas e banners por link, a aplicação precisa de saída HTTPS para os domínios de `readowl.images.allowed-hosts`. Um arquivo que sobrar aparece no log como `Imagem nao apagada`, com a chave, para ser apagado à mão. Um arquivo citado em uma denúncia aberta só é apagado quando ela for encerrada, e até lá continua acessível por quem tiver o endereço. **Se for preciso tirar uma imagem do ar na hora, como em conteúdo ilegal, encerre a denúncia depois de registrar a prova.**
 
 > O protocolo foi testado contra um servidor local, não contra um provedor real. **Teste um envio no provedor escolhido antes de abrir.**
 

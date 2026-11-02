@@ -10,6 +10,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.function.Predicate;
+import java.util.regex.Pattern;
 
 /**
  * Valida o documento do editor (versão 1 do formato) e gera o HTML de leitura e o texto puro.
@@ -27,7 +28,8 @@ final class ChapterDocuments {
     private static final int MAX_JSON_BYTES = 2 * 1024 * 1024;
     private static final int MAX_TEXT_LENGTH = 500_000;
     private static final int MAX_DEPTH = 20;
-    private static final int MAX_IMAGES = 200;
+    private static final int MAX_IMAGES = 20;
+    private static final Pattern WHITESPACE = Pattern.compile("\\s+", Pattern.UNICODE_CHARACTER_CLASS);
     private static final int MAX_IMAGE_TEXT_LENGTH = 500;
 
     private static final Set<String> BLOCKS =
@@ -40,10 +42,19 @@ final class ChapterDocuments {
     private ChapterDocuments() {
     }
 
-    record Rendered(String json, String plainText, String html, boolean hasImages) {
+    record Rendered(String json, String plainText, String html) {
 
         boolean isBlank() {
-            return plainText.isBlank() && !hasImages;
+            return plainText.isBlank();
+        }
+
+        /**
+         * Pontuação solta não conta como palavra.
+         */
+        int wordCount() {
+            return (int) WHITESPACE.splitAsStream(plainText)
+                    .filter(word -> word.codePoints().anyMatch(Character::isLetterOrDigit))
+                    .count();
         }
     }
 
@@ -57,7 +68,7 @@ final class ChapterDocuments {
         }
         Output output = new Output(allowedImage);
         renderRoot(document, output);
-        return new Rendered(json, output.plainText.toString().strip(), output.html.toString(), output.images > 0);
+        return new Rendered(json, output.plainText.toString().strip(), output.html.toString());
     }
 
     private static void renderRoot(JsonNode node, Output output) {

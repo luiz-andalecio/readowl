@@ -275,6 +275,8 @@ As dependências seguem uma direção, sem ciclos: `publishing` e `library` conh
 - **Foto do login:** a conta nova usa a foto do Google, se vier de um domínio permitido, e ela acompanha as mudanças feitas lá (`avatar_from_login`). Uma foto escolhida pela pessoa, enviada ou hospedada em um site permitido, vale mais, e uma foto removida não volta.
 - **Foto de perfil:** corpo binário em `PUT /users/me/avatar`, até 2 MiB e 300x300 pixels. O formato vem dos bytes, e a imagem é refeita em JPEG, sem metadados. O arquivo anterior só sai depois do commit, e a exclusão da conta apaga o arquivo atual.
 - **Moderação:** remove só a capa, só o banner ou só a foto, sem tirar o resto do ar.
+- **Prova em denúncia:** um arquivo citado em uma denúncia aberta não é apagado ao sair de uso. Fica em `held_image_files` e sai ao encerrar a última denúncia (`OpenReportImageHolds`), com a tarefa de retenção como rede de segurança.
+- **Formatos:** JPEG, PNG, WebP e GIF, sempre guardados em JPEG. O WebP é lido pelo plugin `imageio-webp`, e o teste de fumaça confere que ele é encontrado no JAR. De uma imagem animada, fica o primeiro quadro.
 - **Links do autor:** até 10, com o domínio conferido pelo tipo (`ExternalLinkType`). `WEBSITE` aceita qualquer domínio.
 
 ### Leitura e busca

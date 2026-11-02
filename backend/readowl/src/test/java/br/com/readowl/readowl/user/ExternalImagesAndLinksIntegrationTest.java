@@ -6,6 +6,7 @@ import br.com.readowl.readowl.support.ApiIntegrationTest;
 import br.com.readowl.readowl.support.BookFixtures;
 import br.com.readowl.readowl.support.RecordingMailSender;
 import br.com.readowl.readowl.support.RecordingObjectStorage;
+import br.com.readowl.readowl.support.TestImages;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
@@ -140,6 +141,38 @@ class ExternalImagesAndLinksIntegrationTest {
         assertThat(jdbc.queryForMap("SELECT avatar_key, avatar_url FROM users WHERE id = ?", id))
                 .containsEntry("avatar_key", null).containsEntry("avatar_url", null);
         assertThat(jdbc.queryForObject("SELECT count(*) FROM user_links WHERE user_id = ?", Integer.class, id)).isZero();
+    }
+
+    @Test
+    void aPictureCanBeWebpOrGif() {
+        for (String format : List.of("webp", "gif")) {
+            byte[] file = format.equals("webp") ? TestImages.webp(300, 300) : TestImages.gif(300, 300);
+
+            ApiClient.Response saved = person.putBytes(AVATAR, file, "image/" + format);
+
+            assertThat(saved.status()).as(format).isEqualTo(200);
+            assertThat(storage.get(keyOf(saved.json().at("/avatarUrl").asString()))).startsWith((byte) 0xFF, (byte) 0xD8);
+        }
+        assertThat(person.putBytes(AVATAR, TestImages.webp(301, 301), "image/webp").code()).isEqualTo("AVATAR_TOO_LARGE");
+    }
+
+    @Test
+    void aPictureCitedInAnOpenReportStaysAfterTheAccountIsDeleted() {
+        String picture = upload();
+        String reporterEmail = uniqueEmail();
+        accounts.registerVerified(reporterEmail);
+        UUID target = accounts.userId(email);
+        String report = accounts.loggedIn(reporterEmail, PASSWORD).post("/api/v1/reports",
+                body("targetType", "USER", "targetId", target, "reason", "ABUSE")).json().at("/id").asString();
+        String moderatorEmail = uniqueEmail();
+        accounts.registerVerified(moderatorEmail);
+        jdbc.update("UPDATE users SET role = 'MODERATOR' WHERE email = ?", moderatorEmail);
+
+        assertThat(person.delete("/api/v1/users/me", body("password", PASSWORD)).status()).isEqualTo(204);
+        assertThat(storage.holds(keyOf(picture))).isTrue();
+
+        assertThat(accounts.loggedIn(moderatorEmail, PASSWORD).patch("/api/v1/moderation/reports/" + report, body("status", "DISMISSED")).status()).isEqualTo(200);
+        assertThat(storage.holds(keyOf(picture))).isFalse();
     }
 
     @Test

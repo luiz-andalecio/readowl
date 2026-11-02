@@ -11,6 +11,8 @@ import java.io.IOException;
  */
 public final class ImageUploads {
 
+    public static final String WEBP = "image/webp";
+
     private ImageUploads() {
     }
 

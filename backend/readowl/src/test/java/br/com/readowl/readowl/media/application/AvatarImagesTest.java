@@ -1,6 +1,7 @@
 package br.com.readowl.readowl.media.application;
 
 import br.com.readowl.readowl.shared.exception.ApiException;
+import br.com.readowl.readowl.support.TestImages;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.ValueSource;
@@ -104,7 +105,14 @@ class AvatarImagesTest {
         assertRefused("<svg xmlns=\"http://www.w3.org/2000/svg\"><script>alert(1)</script></svg>".getBytes(StandardCharsets.UTF_8), "INVALID_IMAGE");
         assertRefused("GIF89a qualquer coisa".getBytes(StandardCharsets.US_ASCII), "INVALID_IMAGE");
         assertRefused(new byte[0], "INVALID_IMAGE");
-        assertRefused(image("gif", 10, 10), "INVALID_IMAGE");
+        assertRefused(image("bmp", 10, 10), "INVALID_IMAGE");
+    }
+
+    @Test
+    void aGifAndAWebpBecomeJpeg() throws IOException {
+        assertThat(read(AvatarImages.normalize(image("gif", 10, 10))).getWidth()).isEqualTo(10);
+        assertThat(read(AvatarImages.normalize(TestImages.webp(10, 10))).getWidth()).isEqualTo(10);
+        assertThat(AvatarImages.normalize(TestImages.webp(10, 10))).startsWith((byte) 0xFF, (byte) 0xD8);
     }
 
     @Test

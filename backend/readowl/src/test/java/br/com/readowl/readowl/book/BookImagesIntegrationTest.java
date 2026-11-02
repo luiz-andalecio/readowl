@@ -1,5 +1,6 @@
 package br.com.readowl.readowl.book;
 
+import br.com.readowl.readowl.privacy.application.RetentionTasks;
 import br.com.readowl.readowl.support.AccountFixtures;
 import br.com.readowl.readowl.support.ApiClient;
 import br.com.readowl.readowl.support.ApiIntegrationTest;
@@ -43,6 +44,9 @@ class BookImagesIntegrationTest {
 
     @Autowired
     private FakeRemoteImages remote;
+
+    @Autowired
+    private RetentionTasks retention;
 
     @Autowired
     private JdbcTemplate jdbc;
@@ -118,6 +122,150 @@ class BookImagesIntegrationTest {
         assertThat(visitor.get("/api/v1/books?author=" + username()).json().at("/content/0/coverUrl").asString()).isEqualTo(url);
         assertThat(author.get("/api/v1/users/me/books").json().at("/content/0/coverUrl").asString()).isEqualTo(url);
         assertThat(visitor.get("/api/v1/books/" + slug + "/chapters/capitulo-1").json().at("/book/coverUrl").asString()).isEqualTo(url);
+    }
+
+    private String publishAndReport() {
+        books.publishChapter(author, books.createChapter(author, book, "Capítulo 1"), "Era uma vez.");
+        assertThat(author.post("/api/v1/books/" + book + "/publish", body()).status()).isEqualTo(200);
+        return report();
+    }
+
+    private String report() {
+        String reporterEmail = uniqueEmail();
+        accounts.registerVerified(reporterEmail);
+        ApiClient.Response reported = accounts.loggedIn(reporterEmail, PASSWORD).post("/api/v1/reports",
+                body("targetType", "BOOK", "targetId", book, "reason", "ABUSE"));
+        assertThat(reported.status()).isEqualTo(201);
+        return reported.json().at("/id").asString();
+    }
+
+    private void close(ApiClient moderator, String report) {
+        assertThat(moderator.patch("/api/v1/moderation/reports/" + report, body("status", "RESOLVED")).status()).isEqualTo(200);
+    }
+
+    @Test
+    void aReplacedImageStaysWhileAReportCitesIt() {
+        String reported = coverUrl();
+        String report = publishAndReport();
+
+        String newer = coverUrl();
+
+        assertThat(storage.holds(keyOf(reported))).isTrue();
+        assertThat(storage.holds(keyOf(newer))).isTrue();
+        assertThat(author.get("/api/v1/books/" + book + "/details").json().at("/coverUrl").asString()).isEqualTo(newer);
+
+        close(moderator(), report);
+
+        assertThat(storage.holds(keyOf(reported))).isFalse();
+        assertThat(storage.holds(keyOf(newer))).isTrue();
+        assertThat(jdbc.queryForObject("SELECT count(*) FROM held_image_files WHERE file_key = ?", Long.class, keyOf(reported))).isZero();
+    }
+
+    @Test
+    void theFileStaysUntilTheLastReportIsClosed() {
+        String reported = coverUrl();
+        String first = publishAndReport();
+        String second = report();
+        ApiClient moderator = moderator();
+        assertThat(author.delete(path("cover")).status()).isEqualTo(204);
+
+        close(moderator, first);
+        assertThat(storage.holds(keyOf(reported))).isTrue();
+
+        close(moderator, second);
+        assertThat(storage.holds(keyOf(reported))).isFalse();
+    }
+
+    @Test
+    void anImageRemovedByModerationStaysAsEvidenceUntilTheReportIsClosed() {
+        String reported = coverUrl();
+        String report = publishAndReport();
+        ApiClient moderator = moderator();
+
+        assertThat(moderator.post("/api/v1/moderation/books/" + book + "/remove-cover", body("reason", "Imagem imprópria")).status()).isEqualTo(204);
+
+        assertThat(author.get("/api/v1/books/" + book + "/details").json().at("/coverUrl").isNull()).isTrue();
+        assertThat(storage.holds(keyOf(reported))).isTrue();
+
+        close(moderator, report);
+        assertThat(storage.holds(keyOf(reported))).isFalse();
+    }
+
+    @Test
+    void anImageTheReportDoesNotCiteIsDeletedRightAway() {
+        String banner = bannerUrl();
+        String reportedCover = coverUrl();
+        assertThat(author.delete(path("banner")).status()).isEqualTo(204);
+        publishAndReport();
+        String laterBanner = bannerUrl();
+
+        assertThat(author.delete(path("banner")).status()).isEqualTo(204);
+
+        assertThat(storage.holds(keyOf(banner))).isFalse();
+        assertThat(storage.holds(keyOf(laterBanner))).isFalse();
+        assertThat(storage.holds(keyOf(reportedCover))).isTrue();
+    }
+
+    @Test
+    void theRetentionTaskDeletesFilesThatNoLongerProveAnything() {
+        String key = "covers/" + UUID.randomUUID() + "/sobrou.jpg";
+        storage.put(key, new byte[]{1}, "image/jpeg");
+        jdbc.update("INSERT INTO held_image_files (file_key) VALUES (?)", key);
+
+        retention.run();
+
+        assertThat(storage.holds(key)).isFalse();
+        assertThat(jdbc.queryForObject("SELECT count(*) FROM held_image_files WHERE file_key = ?", Long.class, key)).isZero();
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"webp", "gif"})
+    void webpAndGifAreAcceptedFromAFileOrALinkAndBecomeJpeg(String format) {
+        byte[] file = format.equals("webp") ? TestImages.webp(600, 800) : TestImages.gif(600, 800);
+        remote.serve(LINK, file);
+
+        String fromFile = author.putBytes(path("cover"), file, "image/" + format).json().at("/coverUrl").asString();
+        String fromLink = author.put(path("cover"), body("url", LINK)).json().at("/coverUrl").asString();
+
+        for (String url : java.util.List.of(fromFile, fromLink)) {
+            assertThat(url).endsWith(".jpg");
+        }
+        BufferedImage stored = TestImages.read(storage.get(keyOf(fromLink)));
+        assertThat(stored.getWidth()).isEqualTo(600);
+        assertThat(stored.getHeight()).isEqualTo(800);
+    }
+
+    @Test
+    void aWebpKeepsItsColorsAndALargeOneIsReduced() {
+        String banner = author.putBytes(path("banner"), TestImages.webp(3600, 1200), "image/webp").json().at("/bannerUrl").asString();
+
+        BufferedImage stored = TestImages.read(storage.get(keyOf(banner)));
+        assertThat(stored.getWidth()).isEqualTo(2400);
+        assertThat(stored.getHeight()).isEqualTo(800);
+        java.awt.Color color = new java.awt.Color(stored.getRGB(10, 10));
+        assertThat(color.getRed()).isCloseTo(100, org.assertj.core.data.Offset.offset(3));
+        assertThat(color.getGreen()).isCloseTo(200, org.assertj.core.data.Offset.offset(3));
+        assertThat(color.getBlue()).isCloseTo(50, org.assertj.core.data.Offset.offset(3));
+    }
+
+    @Test
+    void theSizeRulesAlsoApplyToWebpAndGif() {
+        assertThat(author.putBytes(path("cover"), TestImages.webp(100, 100), "image/webp").code()).isEqualTo("IMAGE_TOO_SMALL");
+        assertThat(author.putBytes(path("cover"), TestImages.gif(800, 800), "image/gif").code()).isEqualTo("IMAGE_WRONG_PROPORTION");
+        assertThat(author.putBytes(path("cover"), TestImages.webp(6001, 8000), "image/webp").code()).isEqualTo("IMAGE_TOO_LARGE");
+    }
+
+    @Test
+    void aBrokenWebpOrGifIsRefused() {
+        byte[] webp = TestImages.webp(600, 800);
+        byte[] truncatedWebp = java.util.Arrays.copyOf(webp, 22);
+        byte[] onlySignature = "RIFF\0\0\0\0WEBPVP8 ".getBytes();
+        byte[] garbage = "RIFF\0\0\0\0WEBPVP8X\0\0\0\0lixolixolixolixolixolixo".getBytes();
+
+        for (byte[] broken : java.util.List.of(truncatedWebp, onlySignature, garbage)) {
+            assertThat(author.putBytes(path("cover"), broken, "image/webp").code()).isEqualTo("INVALID_IMAGE");
+        }
+        assertThat(author.putBytes(path("cover"), "GIF89a lixo".getBytes(), "image/gif").code()).isEqualTo("INVALID_IMAGE");
     }
 
     @Test

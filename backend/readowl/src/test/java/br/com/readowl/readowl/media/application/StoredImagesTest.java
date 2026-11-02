@@ -6,6 +6,7 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.context.ApplicationEventPublisher;
+import org.springframework.jdbc.core.JdbcTemplate;
 
 import java.util.UUID;
 
@@ -33,7 +34,7 @@ class StoredImagesTest {
         remote = mock(RemoteImages.class);
         ExternalImages external = mock(ExternalImages.class);
         when(external.isAllowed(LINK)).thenReturn(true);
-        images = new StoredImages(noStorage, remote, external, null, mock(ApplicationEventPublisher.class));
+        images = new StoredImages(noStorage, remote, external, null, mock(ApplicationEventPublisher.class), mock(ImageHolds.class), mock(JdbcTemplate.class));
     }
 
     @Test
