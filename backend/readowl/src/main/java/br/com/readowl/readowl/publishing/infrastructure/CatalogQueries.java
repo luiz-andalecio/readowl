@@ -71,7 +71,8 @@ public class CatalogQueries {
                          boolean includeAdult) {
     }
 
-    public record Row(UUID id, String title, String acronym, String slug, String synopsis, BookStatus status,
+    public record Row(UUID id, String title, String acronym, String slug, String synopsis, String coverUrl, String authorAvatarUrl,
+                      BookStatus status,
                       ContentRating contentRating, long viewCount, Double averageRating, long ratingCount,
                       String authorUsername, String authorName, int publishedChapters,
                       Instant lastChapterPublishedAt, Instant createdAt) {
@@ -100,7 +101,7 @@ public class CatalogQueries {
         // candidata, nem conta os capítulos das obras que OFFSET pula.
         boolean countedTogether = ordering == Ordering.RELEVANCE_DESC;
         String sql = """
-                SELECT b.id, b.title, b.acronym, b.slug, b.synopsis, b.status, b.content_rating, b.view_count,
+                SELECT b.id, b.title, b.acronym, b.slug, b.synopsis, b.cover_url, u.avatar_url, b.status, b.content_rating, b.view_count,
                        b.last_chapter_published_at, b.created_at, u.username, u.name, rating.average_rating, rating.rating_count,
                        (SELECT count(*) FROM chapters c WHERE c.book_id = b.id AND c.state = 'PUBLISHED') AS published_chapters
                 """ + (countedTogether ? ", page.total" : "") + " FROM (SELECT b.id" + (countedTogether ? ", count(*) OVER () AS total " : " ") + FROM + conditions(filter, parameters)
@@ -181,7 +182,8 @@ public class CatalogQueries {
 
     private static Row row(ResultSet rs, int rowNumber) throws SQLException {
         return new Row(rs.getObject("id", UUID.class), rs.getString("title"), rs.getString("acronym"),
-                rs.getString("slug"), rs.getString("synopsis"), BookStatus.valueOf(rs.getString("status")),
+                rs.getString("slug"), rs.getString("synopsis"), rs.getString("cover_url"), rs.getString("avatar_url"),
+                BookStatus.valueOf(rs.getString("status")),
                 ContentRating.valueOf(rs.getString("content_rating")), rs.getLong("view_count"), rs.getObject("average_rating", Double.class),
                 rs.getLong("rating_count"), rs.getString("username"), rs.getString("name"),
                 rs.getInt("published_chapters"), instant(rs, "last_chapter_published_at"), instant(rs, "created_at"));

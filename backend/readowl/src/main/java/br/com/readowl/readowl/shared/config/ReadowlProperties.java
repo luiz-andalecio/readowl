@@ -16,7 +16,8 @@ import java.time.Duration;
 public record ReadowlProperties(@NotBlank String publicUrl, @NotBlank @Email String mailFrom,
                                 @Positive int maxConcurrentPasswordHashes, @NotNull @Valid Limits limits,
                                 @NotNull @Valid Sessions sessions, @NotNull @Valid Terms terms,
-                                @NotNull @Valid Retention retention, boolean privilegedGoogleLoginRequired) {
+                                @NotNull @Valid Retention retention, @NotNull Storage storage,
+                                boolean privilegedGoogleLoginRequired) {
 
     /**
      * Cotas de conteúdo. Protegem o armazenamento contra abuso.
@@ -45,6 +46,18 @@ public record ReadowlProperties(@NotBlank String publicUrl, @NotBlank @Email Str
     public record Retention(@NotNull Duration unverifiedAccounts, @NotNull Duration notifications,
                             @NotNull Duration deletedCommentText, @NotNull Duration closedReports,
                             @NotNull Duration auditLog, @NotNull Duration accessRecords) {
+    }
+
+    /**
+     * Armazenamento compatível com S3. Vazio, as fotos de perfil ficam indisponíveis.
+     */
+    public record Storage(String endpoint, String region, String bucket, String accessKey, String secretKey, String publicUrl) {
+
+        // Sem as credenciais, se isto for parar em um log.
+        @Override
+        public String toString() {
+            return "Storage[endpoint=" + endpoint + ", bucket=" + bucket + "]";
+        }
     }
 
     /**

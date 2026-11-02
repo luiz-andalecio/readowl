@@ -1,6 +1,6 @@
 version: 2
 updates:
-  # O Bouncy Castle é a única versão fixada no POM. As demais vêm do Spring Boot, atualizado como um todo.
+  # O Bouncy Castle e o SDK do S3 são as únicas versões fixadas no POM. As demais vêm do Spring Boot, atualizado como um todo.
   - package-ecosystem: maven
     directory: /backend/readowl
     target-branch: dev

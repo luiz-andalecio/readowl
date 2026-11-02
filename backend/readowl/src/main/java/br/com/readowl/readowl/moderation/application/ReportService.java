@@ -33,6 +33,7 @@ import org.springframework.transaction.support.TransactionOperations;
 import java.time.Instant;
 import java.util.Map;
 import java.util.UUID;
+import java.util.stream.Collectors;
 
 /**
  * Só o que está público pode ser denunciado: quem denuncia não descobre se existe algo privado com aquele
@@ -172,7 +173,8 @@ public class ReportService {
         return switch (type) {
             case BOOK -> {
                 Book book = publicBooks.requireById(id);
-                yield new Target(book.getAuthor(), book.getTitle() + "\n\n" + book.getSynopsis());
+                String cover = book.getCoverUrl() == null ? "" : "\n\nCapa: " + book.getCoverUrl();
+                yield new Target(book.getAuthor(), book.getTitle() + "\n\n" + book.getSynopsis() + cover);
             }
             case CHAPTER -> {
                 Chapter chapter = publicChapters.requirePublic(id);
@@ -190,7 +192,10 @@ public class ReportService {
                 User user = users.findById(id).filter(candidate -> candidate.isActive() && candidate.isEmailVerified())
                         .orElseThrow(() -> ApiException.notFound("USER_NOT_FOUND", "Usuário não encontrado."));
                 String description = user.getDescription() == null ? "" : "\n\n" + user.getDescription();
-                yield new Target(user, user.getUsername() + " (" + user.getName() + ")" + description);
+                String avatar = user.getAvatarUrl() == null ? "" : "\n\nFoto: " + user.getAvatarUrl();
+                String links = users.linksOf(user.getId()).stream().map(link -> "\n" + link.type() + ": " + link.url())
+                        .collect(Collectors.joining());
+                yield new Target(user, user.getUsername() + " (" + user.getName() + ")" + description + avatar + links);
             }
         };
     }

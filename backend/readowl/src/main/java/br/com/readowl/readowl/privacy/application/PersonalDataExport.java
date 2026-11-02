@@ -41,10 +41,11 @@ public class PersonalDataExport {
             json.writeStartObject();
             json.writeName("profile");
             json.writePOJO(rows("""
-                    SELECT id, username, name, email, description, role, status, email_verified_at, email_new_chapters,
+                    SELECT id, username, name, email, description, avatar_url, role, status, email_verified_at, email_new_chapters,
                            terms_version, terms_accepted_at, created_at, updated_at
                     FROM users WHERE id = ?
                     """, userId).getFirst());
+            section(json, "externalLinks", "SELECT type, url FROM user_links WHERE user_id = ? ORDER BY position", userId);
             section(json, "linkedAccounts", "SELECT provider, created_at FROM accounts WHERE user_id = ?", userId);
             section(json, "knownDevices", "SELECT created_at, expires_at FROM known_devices WHERE user_id = ?", userId);
             section(json, "follows", "SELECT book_id, created_at FROM book_follows WHERE user_id = ?", userId);
@@ -78,7 +79,7 @@ public class PersonalDataExport {
         json.writeName("books");
         json.writeStartArray();
         List<Map<String, Object>> books = rows("""
-                SELECT id, title, acronym, slug, synopsis, release_frequency, status, publication_state, content_rating,
+                SELECT id, title, acronym, slug, synopsis, cover_url, release_frequency, status, publication_state, content_rating,
                        created_at, updated_at
                 FROM books WHERE author_id = ? ORDER BY id
                 """, userId);

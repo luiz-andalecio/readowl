@@ -62,6 +62,7 @@ Preencha `DB_PASSWORD` e `READOWL_TEST_DB_PASSWORD`. O `.env` não é versionado
 | `MAIL_FROM` | Remetente dos e-mails | `no-reply@readowl.local` (só no perfil `dev`) |
 | `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET` | Login com Google | Sem o ID, o login com Google fica desativado |
 | `TRUSTED_PROXIES` | Só no perfil `prod`: expressão regular com o endereço do proxy, como `172\.18\.0\.2` | Nenhum: a aplicação não sobe sem ela |
+| `S3_ENDPOINT`, `S3_REGION`, `S3_BUCKET`, `S3_ACCESS_KEY`, `S3_SECRET_KEY`, `S3_PUBLIC_URL` | Armazenamento compatível com S3, para fotos de perfil. `S3_ENDPOINT` fica vazio na AWS | Sem `S3_BUCKET`, o envio de fotos responde 503 |
 | `MANAGEMENT_PORT` | Só no perfil `prod`: porta interna de saúde e métricas | `8081` |
 | `PRIVILEGED_GOOGLE_LOGIN_REQUIRED` | Só no perfil `prod`: moderação e administração só entram pelo Google, o que exige `GOOGLE_CLIENT_ID` | `true` |
 
@@ -166,6 +167,7 @@ Os testes de integração usam PostgreSQL real, de duas formas:
 | `UnstorableTextIntegrationTest` | Caractere nulo em corpos e parâmetros responde 400, sem deixar nada gravado |
 | `TrustedProxyIntegrationTest`, `UntrustedProxyIntegrationTest` | Perfil `prod`: cabeçalhos forjados, auditoria, bloqueio de conta por terceiros, portas pública e interna |
 | `DatabaseMigrationTest`, `QueueMetricsIntegrationTest` | Variáveis das migrations à parte e métricas das filas |
+| `ExternalImagesAndLinksIntegrationTest`, `AvatarImagesTest`, `S3ObjectStorageTest` | Capas externas, gênero adulto, foto de perfil, links do autor e o protocolo S3 contra um servidor local |
 | `AudienceReachIntegrationTest` | Endereços antigos de obras e capítulos, sitemap e nota no catálogo |
 | `ModerationNoticeIntegrationTest`, `AdminToolsIntegrationTest` | Avisos da moderação, busca de contas, reprocessamento de eventos e senhas muito comuns |
 | `AccountDeletionIntegrationTest` | Conta excluída sem dado pessoal em nenhuma tabela, comentários preservados, obra sob denúncia, última conta root |
@@ -233,6 +235,7 @@ Monólito modular por domínio, em `br.com.readowl.readowl`. Cada módulo tem as
 | `notification` | Outbox, notificações e e-mails de novos capítulos |
 | `moderation` | Denúncias, ações sobre conteúdo, consulta da auditoria e do registro de acesso |
 | `privacy` | Exclusão de conta, exportação e retenção de dados pessoais |
+| `media` | Validação de imagens e armazenamento de objetos |
 | `banner` | Banners |
 
 As dependências seguem uma direção, sem ciclos: `publishing` e `library` conhecem `book`; `book` conhece `user` e `genre`; `community` conhece `publishing`, `book` e `user`; `notification` conhece `publishing`; `moderation` conhece `community`, `publishing`, `book` e `user`. A gravação da auditoria fica em `shared`, porque vários módulos a usam. A publicação avisa `notification` por evento, sem conhecê-la. `privacy` fica acima de todos, porque a exclusão de uma conta atravessa todos os dados.
@@ -263,6 +266,13 @@ As dependências seguem uma direção, sem ciclos: `publishing` e `library` conh
 - **Acesso:** `BookAccess` é o único ponto que decide quem altera uma obra. Alterações na estrutura bloqueiam a linha da obra antes de ler os dados.
 - **Documento:** `ChapterDocuments` valida o JSON do editor por lista permitida e gera o HTML escrevendo as tags, com todo texto escapado. Nenhum HTML do cliente é interpretado, por isso não há biblioteca de sanitização.
 - **Revisões:** são imutáveis e todas ficam guardadas. Registram quem publicou.
+
+### Imagens e links
+
+- **Capas e banners:** ficam em outros sites, e guardamos só o endereço `https`. O servidor nunca os acessa, para não poder ser usado contra a rede interna, então tamanho e proporção são conferidos pelo frontend. Se o site de origem sair do ar, a imagem some.
+- **Foto de perfil:** corpo binário em `PUT /users/me/avatar`, até 2 MiB e 300x300 pixels. O formato vem dos bytes, e a imagem é refeita em JPEG, sem metadados. O arquivo anterior só sai depois do commit, e a exclusão da conta apaga o arquivo atual.
+- **Moderação:** remove só a capa ou só a foto, sem tirar o resto do ar.
+- **Links do autor:** até 10, com o domínio conferido pelo tipo (`ExternalLinkType`). `WEBSITE` aceita qualquer domínio.
 
 ### Leitura e busca
 

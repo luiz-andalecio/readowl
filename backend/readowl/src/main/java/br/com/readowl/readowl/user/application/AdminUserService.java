@@ -52,12 +52,12 @@ public class AdminUserService {
     public record UserChanges(String name, String username, String description, Role role, UserStatus status) {
     }
 
-    public record AdminUserView(UUID id, String username, String name, String email, String description, Role role,
+    public record AdminUserView(UUID id, String username, String name, String email, String description, String avatarUrl, Role role,
                                 UserStatus status, boolean emailVerified, Instant createdAt, Instant updatedAt) {
 
         static AdminUserView from(User user) {
             return new AdminUserView(user.getId(), user.getUsername(), user.getName(), user.getEmail(),
-                    user.getDescription(), user.getRole(), user.getStatus(), user.isEmailVerified(),
+                    user.getDescription(), user.getAvatarUrl(), user.getRole(), user.getStatus(), user.isEmailVerified(),
                     user.getCreatedAt(), user.getUpdatedAt());
         }
     }

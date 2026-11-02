@@ -36,6 +36,8 @@ public enum RateLimitPolicy {
     PUBLICATION_ACCOUNT(120, Duration.ofHours(1)),
     AUDIT_DENIED_ACCOUNT(60, Duration.ofHours(1)),
     DATA_EXPORT_ACCOUNT(3, Duration.ofDays(1)),
+    AVATAR_ACCOUNT(10, Duration.ofHours(1)),
+    PROFILE_LINKS_ACCOUNT(30, Duration.ofHours(1)),
     OAUTH_START_IP(30, Duration.ofMinutes(15));
 
     private final int limit;

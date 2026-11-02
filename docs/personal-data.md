@@ -37,6 +37,8 @@ Os prazos ficam em `readowl.retention.*`. A tarefa diária `RetentionTasks` apli
 | Sessão de moderação ou administração | `spring_session` | 1 hora sem uso, máximo de 12 horas | Autenticação |
 | Backups | Fora do banco | 7 dias | Recuperação. Contêm tudo o que estava no banco, inclusive contas já excluídas |
 | Obras, revisões publicadas e comentários | Várias | Enquanto a conta existir | Serviço |
+| Foto de perfil | Armazenamento S3 | Até a pessoa trocar ou excluir a conta | Perfil público. Refeita sem metadados |
+| Links externos | `user_links` | Até a pessoa trocar ou excluir a conta | Perfil público |
 
 ## Exclusão da conta
 
@@ -46,6 +48,7 @@ Os prazos ficam em `readowl.retention.*`. A tarefa diária `RetentionTasks` apli
 |---|---|
 | Nome, nome de usuário, e-mail, senha, descrição | Apagados. A linha em `users` fica com valores aleatórios, porque outras tabelas apontam para ela |
 | Vínculo com Google, tokens, navegadores, sessões | Apagados |
+| Foto de perfil e links externos | Apagados. A foto sai do armazenamento depois do commit. Se isso falhar, o log registra a chave, e o arquivo precisa ser apagado à mão |
 | Biblioteca, progresso, notas, reações, curtidas, notificações | Apagados |
 | Obras, capítulos, rascunhos e revisões da pessoa | Apagados, junto com os comentários de terceiros nessas obras |
 | Obra sob denúncia aberta | Fica fora do ar até a denúncia ser encerrada, e então é apagada |
@@ -58,7 +61,7 @@ O `AccountDeletionIntegrationTest` procura os dados da conta em toda coluna de t
 
 ## Exportação
 
-`GET /users/me/export` entrega um JSON com perfil, aceite dos termos, vínculos, biblioteca, notas, reações, curtidas, comentários, notificações, denúncias feitas, registros de acesso e obras, com o rascunho e a revisão publicada de cada capítulo. Ficam de fora hashes e tokens, o que outras pessoas escreveram e as revisões antigas.
+`GET /users/me/export` entrega um JSON com perfil, endereço da foto, links externos, aceite dos termos, vínculos, biblioteca, notas, reações, curtidas, comentários, notificações, denúncias feitas, registros de acesso e obras, com o rascunho e a revisão publicada de cada capítulo. Ficam de fora hashes e tokens, o que outras pessoas escreveram e as revisões antigas.
 
 ## Quem acessa o quê
 

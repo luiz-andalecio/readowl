@@ -50,7 +50,7 @@ public class CatalogService {
                                 String sort, int page, int size) {
     }
 
-    public record CatalogEntry(UUID id, String title, String acronym, String slug, String synopsis, BookStatus status,
+    public record CatalogEntry(UUID id, String title, String acronym, String slug, String synopsis, String coverUrl, BookStatus status,
                                ContentRating contentRating, Double averageRating, long ratingCount,
                                long viewCount, AuthorView author, List<TaxonomyItem> genres, List<TaxonomyItem> tags,
                                int publishedChapters, Instant lastChapterPublishedAt, Instant createdAt) {
@@ -78,8 +78,8 @@ public class CatalogService {
         Map<UUID, List<TaxonomyItem>> tags = queries.tagsOf(ids);
 
         List<CatalogEntry> content = rows.stream().map(row -> new CatalogEntry(row.id(), row.title(), row.acronym(),
-                row.slug(), row.synopsis(), row.status(), row.contentRating(), row.averageRating(), row.ratingCount(), row.viewCount(),
-                new AuthorView(row.authorUsername(), row.authorName()),
+                row.slug(), row.synopsis(), row.coverUrl(), row.status(), row.contentRating(), row.averageRating(), row.ratingCount(), row.viewCount(),
+                new AuthorView(row.authorUsername(), row.authorName(), row.authorAvatarUrl()),
                 genres.getOrDefault(row.id(), List.of()), tags.getOrDefault(row.id(), List.of()),
                 row.publishedChapters(), row.lastChapterPublishedAt(), row.createdAt())).toList();
         return new PageResponse<>(content, search.page(), search.size(), total,

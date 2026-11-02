@@ -6,6 +6,7 @@ import br.com.readowl.readowl.auth.application.AccountMails;
 import br.com.readowl.readowl.auth.application.SessionManager;
 import br.com.readowl.readowl.shared.audit.AuditTrail;
 import br.com.readowl.readowl.shared.audit.SecurityEvents;
+import br.com.readowl.readowl.user.application.AvatarService;
 import br.com.readowl.readowl.user.application.SessionUser;
 import br.com.readowl.readowl.user.application.UserService;
 import jakarta.servlet.http.HttpServletRequest;
@@ -34,7 +35,7 @@ public class AccountDeletionService {
      */
     public static final List<String> REMOVED_TABLES = List.of("book_follows", "book_ratings", "chapter_reactions",
             "comment_likes", "chapter_views", "reading_progress", "notifications", "accounts", "verification_tokens",
-            "password_reset_tokens", "email_change_tokens", "known_devices", "account_mail_queue");
+            "password_reset_tokens", "email_change_tokens", "known_devices", "account_mail_queue", "user_links");
 
     /**
      * Continuam apontando para a linha anonimizada. chapter_revisions e books têm o próprio tratamento: as obras saem
@@ -51,10 +52,12 @@ public class AccountDeletionService {
     private final RetainedBooks books;
     private final JdbcTemplate jdbc;
     private final TransactionOperations transaction;
+    private final AvatarService avatars;
 
     AccountDeletionService(UserService users, AccountConfirmation confirmation, AccountMails mails, SessionManager sessions,
                            AuditTrail audit, SecurityEvents events, RetainedBooks books, JdbcTemplate jdbc,
-                           TransactionOperations transaction) {
+                           TransactionOperations transaction, AvatarService avatars) {
+        this.avatars = avatars;
         this.users = users;
         this.confirmation = confirmation;
         this.mails = mails;
@@ -70,6 +73,7 @@ public class AccountDeletionService {
         confirmation.require(principal, password);
         UUID id = principal.id();
         transaction.executeWithoutResult(status -> {
+            avatars.remove(id);
             String email = users.anonymize(id, Instant.now());
             for (String table : REMOVED_TABLES) {
                 jdbc.update("DELETE FROM " + table + " WHERE user_id = ?", id);

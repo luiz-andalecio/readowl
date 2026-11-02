@@ -190,6 +190,10 @@ request POST /api/v1/admin/banners '{"name":"Teste","imageUrl":"https://cdn.exam
 check 'banner criado' '201' "$STATUS"
 check 'acao na auditoria' 'POST /api/v1/admin/banners|SUCCESS' "$(sql 'SELECT action, outcome FROM audit_log')"
 
+AVATAR_STATUS="$(curl -s -o /dev/null -w '%{http_code}' -X PUT "$BASE/api/v1/users/me/avatar" -H 'X-Forwarded-Proto: https' \
+    -H "Cookie: $BOTH" -H "X-XSRF-TOKEN: $TOKEN" -H 'Content-Type: image/png' --data-binary 'x')"
+check 'sem armazenamento, o envio de foto responde 503' '503' "$AVATAR_STATUS"
+
 refused_to_app 'DELETE FROM audit_log'
 refused_to_app 'UPDATE audit_log SET outcome = outcome'
 refused_to_app 'TRUNCATE audit_log'

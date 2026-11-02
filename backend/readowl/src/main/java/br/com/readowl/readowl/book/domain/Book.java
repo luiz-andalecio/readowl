@@ -33,6 +33,8 @@ import java.util.Set;
 @NoArgsConstructor(access = AccessLevel.PROTECTED)
 public class Book extends BaseEntity {
 
+    private static final String ADULT_GENRE = "Adulto";
+
     @NotBlank
     @Size(max = 200)
     @Column(nullable = false, length = 200)
@@ -68,6 +70,10 @@ public class Book extends BaseEntity {
     @Enumerated(EnumType.STRING)
     @Column(nullable = false, length = 10)
     private ContentRating contentRating = ContentRating.GENERAL;
+
+    @Size(max = 1000)
+    @Column(length = 1000)
+    private String coverUrl;
 
     // Alterado apenas por UPDATE atômico: não pode ser sobrescrito por uma entidade desatualizada.
     @Column(nullable = false, updatable = false)
@@ -106,8 +112,19 @@ public class Book extends BaseEntity {
         return contentRating == ContentRating.ADULT;
     }
 
+    /**
+     * O gênero Adulto sempre classifica a obra como adulta: sem isso, ela apareceria para visitantes com esse gênero na capa.
+     */
     public void changeContentRating(ContentRating contentRating) {
-        this.contentRating = contentRating;
+        this.contentRating = hasAdultGenre() ? ContentRating.ADULT : contentRating;
+    }
+
+    private boolean hasAdultGenre() {
+        return genres.stream().anyMatch(genre -> ADULT_GENRE.equals(genre.getName()));
+    }
+
+    public void changeCover(String coverUrl) {
+        this.coverUrl = coverUrl;
     }
 
     public static String normalizeAcronym(String acronym) {

@@ -44,7 +44,7 @@ public class ReadingService {
         this.slugHistory = slugHistory;
     }
 
-    public record AuthorView(String username, String name) {
+    public record AuthorView(String username, String name, String avatarUrl) {
     }
 
     public record PublicVolume(UUID id, String title) {
@@ -54,7 +54,7 @@ public class ReadingService {
     }
 
     public record PublicBook(UUID id, String title, String acronym, String slug, String synopsis,
-                             String releaseFrequency, BookStatus status, ContentRating contentRating, long viewCount, AuthorView author,
+                             String coverUrl, String releaseFrequency, BookStatus status, ContentRating contentRating, long viewCount, AuthorView author,
                              List<TaxonomyItem> genres, List<TaxonomyItem> tags, Instant lastChapterPublishedAt,
                              Instant createdAt, List<PublicVolume> volumes, long publishedChapters) {
     }
@@ -62,7 +62,7 @@ public class ReadingService {
     public record ChapterLink(String title, String slug) {
     }
 
-    public record BookLink(UUID id, String title, String slug, AuthorView author) {
+    public record BookLink(UUID id, String title, String slug, String coverUrl, AuthorView author) {
     }
 
     public record ChapterReading(UUID id, String title, String slug, PublicVolume volume, String html,
@@ -72,7 +72,7 @@ public class ReadingService {
     public PublicBook book(String slug) {
         Book book = publicBooks.requireBySlug(slug);
         return new PublicBook(book.getId(), book.getTitle(), book.getAcronym(), book.getSlug(), book.getSynopsis(),
-                book.getReleaseFrequency(), book.getStatus(), book.getContentRating(), book.getViewCount(), author(book),
+                book.getCoverUrl(), book.getReleaseFrequency(), book.getStatus(), book.getContentRating(), book.getViewCount(), author(book),
                 book.getGenres().stream().map(TaxonomyItem::from).sorted(Comparator.comparing(TaxonomyItem::name)).toList(),
                 book.getTags().stream().map(TaxonomyItem::from).sorted(Comparator.comparing(TaxonomyItem::name)).toList(),
                 book.getLastChapterPublishedAt(), book.getCreatedAt(),
@@ -106,7 +106,7 @@ public class ReadingService {
         return new ChapterReading(chapter.id(), chapter.title(), chapter.slug(),
                 chapter.volumeId() == null ? null : new PublicVolume(chapter.volumeId(), chapter.volumeTitle()),
                 chapter.html(), chapter.publishedAt(),
-                new BookLink(book.getId(), book.getTitle(), book.getSlug(), author(book)),
+                new BookLink(book.getId(), book.getTitle(), book.getSlug(), book.getCoverUrl(), author(book)),
                 link(neighbors.previousTitle(), neighbors.previousSlug()),
                 link(neighbors.nextTitle(), neighbors.nextSlug()));
     }
@@ -116,6 +116,6 @@ public class ReadingService {
     }
 
     private static AuthorView author(Book book) {
-        return new AuthorView(book.getAuthor().getUsername(), book.getAuthor().getName());
+        return new AuthorView(book.getAuthor().getUsername(), book.getAuthor().getName(), book.getAuthor().getAvatarUrl());
     }
 }

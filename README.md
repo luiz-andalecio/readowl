@@ -355,15 +355,14 @@ Checks will apply to endpoints, services, queries, downloads, and asynchronous t
 
 ## 🖼️ Images and Uploads
 
-Covers and avatars will be stored as objects, with metadata in PostgreSQL. The MVP will accept explicitly allowed raster formats.
+Covers and banners are hosted on external sites, such as Imgur or ImgBB, and only their HTTPS addresses are stored. The server never downloads them. Only profile pictures are uploaded, to S3-compatible object storage, up to 300x300 pixels.
 
 - File size, dimension, and pixel-count limits.
 - Actual file content verification beyond the extension and declared MIME type.
 - Image reprocessing and removal of unnecessary metadata.
 - Server-generated object names.
-- Optimized variants for different screen sizes.
-- Public images eligible for CDN delivery; private materials subject to access authorization.
-- Controlled cleanup of unreferenced objects.
+- Public images eligible for CDN delivery.
+- Cleanup of replaced pictures and of pictures from deleted accounts.
 
 Images will use versioned keys to avoid stale cached content. Storage credentials will never be sent to the browser.
 

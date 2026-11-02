@@ -379,6 +379,54 @@ Dados da própria conta. Exige sessão.
 }
 ```
 
+### `PUT /users/me/avatar`
+
+Envia a foto de perfil. O corpo é a própria imagem, sem formulário, com `Content-Type: image/jpeg` ou `image/png`. Até 2 MiB e 300x300 pixels: **recorte no navegador antes de enviar**. A imagem é refeita em JPEG, e transparência vira fundo branco. Limite de 10 por hora.
+
+**200**
+```json
+{ "avatarUrl": "https://cdn.exemplo.com/avatars/019f.../7a1c....jpg" }
+```
+
+| Status | `code` | Quando |
+|---|---|---|
+| 400 | `INVALID_IMAGE` | O conteúdo não é um JPEG ou PNG válido, mesmo com o tipo certo |
+| 400 | `AVATAR_TOO_LARGE` | Mais de 300 pixels de largura ou altura |
+| 400 | `AVATAR_FILE_TOO_LARGE` | Mais de 2 MiB |
+| 415 | `UNSUPPORTED_MEDIA_TYPE` | Outro `Content-Type` |
+| 503 | `AVATARS_UNAVAILABLE` | Armazenamento não configurado ou fora do ar |
+
+`avatarUrl` aparece no perfil, na sessão, em `author` no catálogo, na leitura e nos comentários. É `null` sem foto.
+
+### `DELETE /users/me/avatar`
+
+Remove a foto. **204**, sem corpo.
+
+### `PUT /users/me/links`
+
+Troca a lista de links externos do perfil, até 10, na ordem de exibição. Limite de 30 por hora. Lista vazia remove todos. Aparecem em `links`, no perfil público e em `GET /users/me`.
+
+```json
+{ "links": [{ "type": "APOIA_SE", "url": "https://apoia.se/maria" }, { "type": "DISCORD", "url": "https://discord.gg/abc" }] }
+```
+
+**200**, com a lista gravada. **400** `INVALID_LINK` se o endereço não for `https` ou não for do domínio do tipo.
+
+| `type` | Domínios |
+|---|---|
+| `DISCORD` | `discord.gg`, `discord.com` |
+| `APOIA_SE` | `apoia.se` |
+| `PATREON` | `patreon.com` |
+| `KO_FI` | `ko-fi.com` |
+| `INSTAGRAM` | `instagram.com` |
+| `X` | `x.com`, `twitter.com` |
+| `YOUTUBE` | `youtube.com`, `youtu.be` |
+| `TIKTOK` | `tiktok.com` |
+| `FACEBOOK` | `facebook.com` |
+| `BLUESKY` | `bsky.app` |
+| `TWITCH` | `twitch.tv` |
+| `WEBSITE` | Qualquer um |
+
 ### `POST /users/me/terms`
 
 Aceita os termos vigentes.
@@ -569,7 +617,8 @@ Vale o mesmo para capítulos: o slug segue o título. Títulos repetidos dentro 
 | `acronym` | De 2 a 10 letras ou números, sem acentos ou espaços. É salva em maiúsculas |
 | `synopsis` | Até 2000 caracteres, não vazia |
 | `releaseFrequency` | Opcional, até 50 caracteres |
-| `contentRating` | `GENERAL`, o padrão, ou `ADULT`. Obras adultas não aparecem para visitantes nem no sitemap, e respondem 404 sem sessão |
+| `coverUrl` | Opcional, até 1000 caracteres. Endereço `https` de uma imagem em outro site, como Imgur ou ImgBB. Em branco na edição, remove a capa. **400** `INVALID_COVER_URL` fora disso |
+| `contentRating` | `GENERAL`, o padrão, ou `ADULT`. Com o gênero `Adulto`, a obra fica sempre `ADULT`. Obras adultas não aparecem para visitantes nem no sitemap, e respondem 404 sem sessão |
 | `genreIds` | De 1 a 5 gêneros de `GET /genres` |
 | `tags` | Opcional, até 10 nomes com letras, números, espaços, `_` ou `-`. Tags novas são criadas; maiúsculas não geram duplicatas |
 
@@ -1238,6 +1287,8 @@ Encerra a denúncia. `note` é opcional, até 1000 caracteres. **200**, com o co
 | `POST /moderation/comments/{id}/hide` | Oculta o comentário. A pessoa não consegue editar nem excluir |
 | `POST /moderation/books/{id}/restore`, `POST /moderation/chapters/{id}/restore` e `POST /moderation/comments/{id}/restore` | Desfaz a ocultação |
 
+`POST /moderation/books/{id}/remove-cover` e `POST /moderation/users/{id}/remove-avatar` retiram só a imagem imprópria, sem tirar o resto do ar. Respondem 409 `NO_COVER` ou `NO_AVATAR` se não houver imagem.
+
 Todas exigem o motivo, de até 500 caracteres, que fica na auditoria. **Quem escreveu o conteúdo recebe esse motivo** em uma notificação, então escreva para a pessoa ler. **204**, sem corpo.
 
 ```json
@@ -1589,6 +1640,9 @@ Nada disso foi alterado no projeto Angular.
 | SEO | No SSR: `title`, descrição e Open Graph por obra e capítulo, URL canônica e 301 em `BOOK_MOVED` e `CHAPTER_MOVED` |
 | Catálogo | Mostrar `averageRating`, ausente sem avaliações, e `ratingCount` nos cartões |
 | Notificações | Mostrar avisos da moderação, com `message` |
+| Capas | Conferir no navegador o mínimo de 600x800 e a proporção de 3:4, com 2% de tolerância, antes de salvar `coverUrl`. O servidor não baixa a imagem. Mostrar uma capa padrão se ela não carregar, e usar `referrerpolicy="no-referrer"`, porque alguns sites bloqueiam imagens abertas de outros domínios |
+| Foto de perfil | Recortar e reduzir no navegador para no máximo 300x300 antes de enviar |
+| Links do autor | Abrir com `rel="nofollow noopener ugc"`, porque são informados por usuários |
 | Obras adultas | Oferecer `contentRating` ao criar e editar a obra. O SSR não envia cookies, então uma obra adulta responde 404 no servidor e só aparece no navegador, com sessão |
 | Imagens | Tratar obra e perfil sem capa ou avatar até a etapa de mídia |
 | Editor | Adotar o Tiptap com as extensões da [lista do formato](#formato-do-documento-versão-1). Ele ainda não está no `package.json` |

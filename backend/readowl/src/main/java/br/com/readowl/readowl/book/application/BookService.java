@@ -12,6 +12,7 @@ import br.com.readowl.readowl.shared.config.ReadowlProperties;
 import br.com.readowl.readowl.shared.exception.ApiException;
 import br.com.readowl.readowl.shared.ratelimit.RateLimitPolicy;
 import br.com.readowl.readowl.shared.ratelimit.RateLimiter;
+import br.com.readowl.readowl.shared.text.ExternalUrls;
 import br.com.readowl.readowl.shared.text.Texts;
 import br.com.readowl.readowl.user.application.SessionUser;
 import br.com.readowl.readowl.user.application.UserService;
@@ -55,14 +56,14 @@ public class BookService {
     }
 
     public record NewBook(String title, String acronym, String synopsis, String releaseFrequency,
-                          ContentRating contentRating, List<UUID> genreIds, List<String> tagNames) {
+                          ContentRating contentRating, String coverUrl, List<UUID> genreIds, List<String> tagNames) {
     }
 
     /**
      * Campos nulos não são alterados.
      */
     public record BookChanges(String title, String acronym, String synopsis, String releaseFrequency,
-                              BookStatus status, ContentRating contentRating, List<UUID> genreIds, List<String> tagNames,
+                              BookStatus status, ContentRating contentRating, String coverUrl, List<UUID> genreIds, List<String> tagNames,
                               Long version) {
     }
 
@@ -79,10 +80,9 @@ public class BookService {
             Book book = new Book(title, data.acronym(), slug, data.synopsis().trim(),
                     users.requireById(principal.id()));
             book.updateReleaseFrequency(Texts.blankToNull(data.releaseFrequency()));
-            if (data.contentRating() != null) {
-                book.changeContentRating(data.contentRating());
-            }
+            book.changeCover(cover(data.coverUrl()));
             book.replaceGenres(taxonomy.requireGenres(data.genreIds()));
+            book.changeContentRating(data.contentRating() != null ? data.contentRating() : book.getContentRating());
             book.replaceTags(taxonomy.resolveTags(data.tagNames() == null ? List.of() : data.tagNames()));
             return BookDetails.from(books.saveAndFlush(book));
         }));
@@ -117,17 +117,29 @@ public class BookService {
             if (changes.status() != null) {
                 book.updateStatus(changes.status());
             }
-            if (changes.contentRating() != null) {
-                book.changeContentRating(changes.contentRating());
+            if (changes.coverUrl() != null) {
+                book.changeCover(cover(changes.coverUrl()));
             }
             if (changes.genreIds() != null) {
                 book.replaceGenres(taxonomy.requireGenres(changes.genreIds()));
             }
+            book.changeContentRating(changes.contentRating() != null ? changes.contentRating() : book.getContentRating());
             if (changes.tagNames() != null) {
                 book.replaceTags(taxonomy.resolveTags(changes.tagNames()));
             }
             return BookDetails.from(books.saveAndFlush(book));
         }));
+    }
+
+    /**
+     * A capa fica em outro site. Em branco, é removida.
+     */
+    private static String cover(String url) {
+        String cover = Texts.blankToNull(url);
+        if (cover != null && !ExternalUrls.isHttps(cover)) {
+            throw ApiException.badRequest("INVALID_COVER_URL", "Use o endereço completo da imagem, com https://.");
+        }
+        return cover == null ? null : cover.trim();
     }
 
     /**

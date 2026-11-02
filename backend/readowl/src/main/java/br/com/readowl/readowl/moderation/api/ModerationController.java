@@ -109,6 +109,20 @@ class ModerationController {
         return bookId != null ? moderation.commentsOnBook(bookId, pageable) : moderation.commentsByUser(userId, pageable);
     }
 
+    @PostMapping("/moderation/books/{id}/remove-cover")
+    @ResponseStatus(HttpStatus.NO_CONTENT)
+    void removeCover(@AuthenticationPrincipal SessionUser principal, @PathVariable UUID id,
+                     @Valid @RequestBody ActionRequest body) {
+        moderation.removeCover(id, body.reason(), principal);
+    }
+
+    @PostMapping("/moderation/users/{id}/remove-avatar")
+    @ResponseStatus(HttpStatus.NO_CONTENT)
+    void removeAvatar(@AuthenticationPrincipal SessionUser principal, @PathVariable UUID id,
+                      @Valid @RequestBody ActionRequest body) {
+        moderation.removeAvatar(id, body.reason(), principal);
+    }
+
     @PostMapping("/moderation/books/{id}/hide")
     @ResponseStatus(HttpStatus.NO_CONTENT)
     void hideBook(@AuthenticationPrincipal SessionUser principal, @PathVariable UUID id,

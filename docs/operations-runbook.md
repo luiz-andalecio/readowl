@@ -26,6 +26,12 @@ sh infra/homolog.sh check   # Confere usuários, permissões, proxy e e-mail
 
 O site fica em `https://localhost:8443`, com certificado autoassinado, e os e-mails em `http://localhost:8025`. O pipeline repete esses passos a cada Pull Request.
 
+### Armazenamento de fotos
+
+Crie um bucket compatível com S3, com leitura pública das fotos, e preencha as variáveis `S3_*`. As credenciais só precisam gravar e apagar nesse bucket. Com o armazenamento pela metade, a aplicação não sobe. Sem nenhuma dessas variáveis, ela sobe e o envio de fotos responde 503. O log `Foto nao apagada` indica um arquivo sem uso, que precisa ser apagado à mão.
+
+> O protocolo foi testado contra um servidor local, não contra um provedor real. **Teste um envio no provedor escolhido antes de abrir.**
+
 ### Primeira instalação em produção
 
 1. Preencha o arquivo de ambiente e aponte `TLS_CERT_DIR` para o certificado. A chave deve ser legível pelo usuário 101, o do NGINX.

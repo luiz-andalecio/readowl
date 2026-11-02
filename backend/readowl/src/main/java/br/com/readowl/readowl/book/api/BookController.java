@@ -42,7 +42,7 @@ class BookController {
     @RateLimited(RateLimitPolicy.BOOK_CREATION_ACCOUNT)
     BookDetails create(@AuthenticationPrincipal SessionUser principal, @Valid @RequestBody CreateBookRequest body) {
         return books.create(new BookService.NewBook(body.title(), body.acronym(), body.synopsis(),
-                body.releaseFrequency(), body.contentRating(), body.genreIds(), body.tags()), principal);
+                body.releaseFrequency(), body.contentRating(), body.coverUrl(), body.genreIds(), body.tags()), principal);
     }
 
     @GetMapping("/books/{id}/details")
@@ -55,7 +55,7 @@ class BookController {
     BookDetails update(@AuthenticationPrincipal SessionUser principal, @PathVariable UUID id,
                        @Valid @RequestBody UpdateBookRequest body) {
         return books.update(id, new BookService.BookChanges(body.title(), body.acronym(), body.synopsis(),
-                body.releaseFrequency(), body.status(), body.contentRating(), body.genreIds(), body.tags(), body.version()), principal);
+                body.releaseFrequency(), body.status(), body.contentRating(), body.coverUrl(), body.genreIds(), body.tags(), body.version()), principal);
     }
 
     @DeleteMapping("/books/{id}")

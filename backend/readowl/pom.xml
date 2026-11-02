@@ -71,6 +71,27 @@
 			<artifactId>flyway-database-postgresql</artifactId>
 		</dependency>
 		<!-- Exigido pelo Argon2PasswordEncoder. Não é gerenciado pelo BOM do Spring Boot. -->
+		<!-- Fotos de perfil em armazenamento compatível com S3. O cliente HTTP do JDK evita trazer Netty e Apache HttpClient. -->
+		<dependency>
+			<groupId>software.amazon.awssdk</groupId>
+			<artifactId>s3</artifactId>
+			<version>2.57.8</version>
+			<exclusions>
+				<exclusion>
+					<groupId>software.amazon.awssdk</groupId>
+					<artifactId>apache-client</artifactId>
+				</exclusion>
+				<exclusion>
+					<groupId>software.amazon.awssdk</groupId>
+					<artifactId>netty-nio-client</artifactId>
+				</exclusion>
+			</exclusions>
+		</dependency>
+		<dependency>
+			<groupId>software.amazon.awssdk</groupId>
+			<artifactId>url-connection-client</artifactId>
+			<version>2.57.8</version>
+		</dependency>
 		<dependency>
 			<groupId>org.bouncycastle</groupId>
 			<artifactId>bcprov-jdk18on</artifactId>

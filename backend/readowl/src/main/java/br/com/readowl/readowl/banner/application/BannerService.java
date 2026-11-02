@@ -4,12 +4,11 @@ import br.com.readowl.readowl.banner.domain.Banner;
 import br.com.readowl.readowl.banner.infrastructure.BannerRepository;
 import br.com.readowl.readowl.shared.api.PageResponse;
 import br.com.readowl.readowl.shared.exception.ApiException;
+import br.com.readowl.readowl.shared.text.ExternalUrls;
 import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
-import java.net.URI;
-import java.net.URISyntaxException;
 import java.time.Instant;
 import java.util.List;
 import java.util.UUID;
@@ -102,14 +101,8 @@ public class BannerService {
     }
 
     private static void requireHttps(String url) {
-        try {
-            URI uri = new URI(url.trim());
-            if ("https".equalsIgnoreCase(uri.getScheme()) && uri.getHost() != null && uri.getUserInfo() == null) {
-                return;
-            }
-        } catch (URISyntaxException ex) {
-            // Tratado abaixo, com a mesma resposta de um endereço bem formado mas não permitido.
+        if (!ExternalUrls.isHttps(url)) {
+            throw ApiException.badRequest("INVALID_BANNER_URL", "Use endereços completos com https://.");
         }
-        throw ApiException.badRequest("INVALID_BANNER_URL", "Use endereços completos com https://.");
     }
 }

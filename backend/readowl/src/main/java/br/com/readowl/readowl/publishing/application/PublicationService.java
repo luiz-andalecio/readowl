@@ -180,6 +180,16 @@ public class PublicationService {
         return book;
     }
 
+    public Book removeCover(UUID bookId) {
+        Book book = bookAccess.requireLocked(bookId);
+        if (book.getCoverUrl() == null) {
+            throw ApiException.conflict("NO_COVER", "Esta obra não tem capa.");
+        }
+        book.changeCover(null);
+        chapters.flush();
+        return book;
+    }
+
     public Book restoreBook(UUID bookId, SessionUser actor) {
         Book book = bookAccess.requireLocked(bookId);
         actor.requireIndependentReview(book.getAuthor().getId());

@@ -15,6 +15,7 @@ record CreateBookRequest(
         @NotBlank @Size(max = 2000) String synopsis,
         @Size(max = 50) String releaseFrequency,
         ContentRating contentRating,
+        @Size(max = 1000) String coverUrl,
         @NotNull @Size(min = 1, max = 5) List<@NotNull UUID> genreIds,
         @Size(max = 10)
         List<@NotBlank @Size(max = 50) @Pattern(regexp = BookRules.TAG, message = BookRules.TAG_MESSAGE) String> tags) {

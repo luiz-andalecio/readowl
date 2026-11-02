@@ -7,6 +7,11 @@ import org.springframework.context.annotation.Bean;
 public class ApiTestConfiguration {
 
     @Bean
+    RecordingObjectStorage recordingObjectStorage() {
+        return new RecordingObjectStorage();
+    }
+
+    @Bean
     RecordingMailSender recordingMailSender() {
         return new RecordingMailSender();
     }

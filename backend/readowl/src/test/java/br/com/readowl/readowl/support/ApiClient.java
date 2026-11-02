@@ -65,6 +65,10 @@ public final class ApiClient {
                 .header("X-XSRF-TOKEN", csrfToken));
     }
 
+    public Response putBytes(String path, byte[] body, String contentType) {
+        return send(withCsrf(request(path)).PUT(HttpRequest.BodyPublishers.ofByteArray(body)).header("Content-Type", contentType));
+    }
+
     public Response put(String path, Object body) {
         return send(withCsrf(request(path)).PUT(json(body)).header("Content-Type", "application/json"));
     }

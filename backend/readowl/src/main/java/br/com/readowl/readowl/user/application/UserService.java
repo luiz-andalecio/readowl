@@ -6,6 +6,7 @@ import br.com.readowl.readowl.shared.text.Slugs;
 import br.com.readowl.readowl.user.domain.Role;
 import br.com.readowl.readowl.user.domain.User;
 import br.com.readowl.readowl.user.domain.UserStatus;
+import br.com.readowl.readowl.user.infrastructure.UserLinks;
 import br.com.readowl.readowl.user.infrastructure.UserRepository;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Propagation;
@@ -13,6 +14,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.time.Instant;
 import java.util.Collection;
+import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
@@ -34,10 +36,12 @@ public class UserService {
 
     private final UserRepository users;
     private final ReadowlProperties properties;
+    private final UserLinks links;
 
-    public UserService(UserRepository users, ReadowlProperties properties) {
+    public UserService(UserRepository users, ReadowlProperties properties, UserLinks links) {
         this.users = users;
         this.properties = properties;
+        this.links = links;
     }
 
     public record CurrentTerms(String version, int minimumAge) {
@@ -95,20 +99,23 @@ public class UserService {
         return email;
     }
 
-    public record PublicProfile(String username, String name, String description, Instant createdAt) {
+    public record PublicProfile(String username, String name, String description, String avatarUrl,
+                                List<UserLinks.ExternalLink> links, Instant createdAt) {
 
-        static PublicProfile from(User user) {
-            return new PublicProfile(user.getUsername(), user.getName(), user.getDescription(), user.getCreatedAt());
+        static PublicProfile from(User user, List<UserLinks.ExternalLink> links) {
+            return new PublicProfile(user.getUsername(), user.getName(), user.getDescription(), user.getAvatarUrl(), links,
+                    user.getCreatedAt());
         }
     }
 
-    public record MyProfile(UUID id, String username, String name, String email, String description, Role role,
-                            boolean emailVerified, boolean emailNewChapters, Instant createdAt) {
+    public record MyProfile(UUID id, String username, String name, String email, String description, String avatarUrl,
+                            List<UserLinks.ExternalLink> links, Role role, boolean emailVerified, boolean emailNewChapters,
+                            Instant createdAt) {
 
-        static MyProfile from(User user) {
+        static MyProfile from(User user, List<UserLinks.ExternalLink> links) {
             return new MyProfile(user.getId(), user.getUsername(), user.getName(), user.getEmail(),
-                    user.getDescription(), user.getRole(), user.isEmailVerified(), user.isEmailNewChapters(),
-                    user.getCreatedAt());
+                    user.getDescription(), user.getAvatarUrl(), links, user.getRole(), user.isEmailVerified(),
+                    user.isEmailNewChapters(), user.getCreatedAt());
         }
     }
 
@@ -142,11 +149,12 @@ public class UserService {
     }
 
     public PublicProfile publicProfile(String username) {
-        return PublicProfile.from(requirePublicProfile(username));
+        User user = requirePublicProfile(username);
+        return PublicProfile.from(user, links.of(user.getId()));
     }
 
     public MyProfile myProfile(UUID id) {
-        return MyProfile.from(requireById(id));
+        return MyProfile.from(requireById(id), links.of(id));
     }
 
     public boolean isUsernameUnavailable(String username) {
@@ -180,7 +188,39 @@ public class UserService {
         if (emailNewChapters != null) {
             user.changeEmailNewChapters(emailNewChapters);
         }
-        return MyProfile.from(user);
+        return MyProfile.from(user, links.of(id));
+    }
+
+    public List<UserLinks.ExternalLink> linksOf(UUID id) {
+        return links.of(id);
+    }
+
+    /**
+     * A pessoa envia a lista inteira, e a ordem dela é a de exibição.
+     */
+    @Transactional
+    public List<UserLinks.ExternalLink> replaceLinks(UUID id, List<UserLinks.ExternalLink> newLinks) {
+        List<UserLinks.ExternalLink> cleaned = newLinks.stream()
+                .map(link -> new UserLinks.ExternalLink(link.type(), link.url().trim())).distinct().toList();
+        for (UserLinks.ExternalLink link : cleaned) {
+            if (!link.type().accepts(link.url())) {
+                throw ApiException.badRequest("INVALID_LINK", "O endereço não corresponde a " + link.type() + ". Use um endereço completo com https://.");
+            }
+        }
+        requireById(id);
+        links.replace(id, cleaned);
+        return cleaned;
+    }
+
+    /**
+     * @return a chave do arquivo anterior, para apagar depois do commit
+     */
+    @Transactional
+    public String changeAvatar(UUID id, String key, String url) {
+        User user = requireById(id);
+        String previous = user.getAvatarKey();
+        user.changeAvatar(key, url);
+        return previous;
     }
 
     public Map<UUID, String> usernamesById(Collection<UUID> ids) {

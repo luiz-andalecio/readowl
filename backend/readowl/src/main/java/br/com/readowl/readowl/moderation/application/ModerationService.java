@@ -10,6 +10,8 @@ import br.com.readowl.readowl.publishing.application.PublicationService;
 import br.com.readowl.readowl.publishing.domain.Chapter;
 import br.com.readowl.readowl.shared.api.PageResponse;
 import br.com.readowl.readowl.shared.audit.AuditTrail;
+import br.com.readowl.readowl.shared.exception.ApiException;
+import br.com.readowl.readowl.user.application.AvatarService;
 import br.com.readowl.readowl.user.application.SessionUser;
 import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
@@ -30,9 +32,11 @@ public class ModerationService {
     private final CommentModeration comments;
     private final AuditTrail audit;
     private final NotificationService notifications;
+    private final AvatarService avatars;
 
     ModerationService(PublicationService publication, CommentModeration comments, AuditTrail audit,
-                      NotificationService notifications) {
+                      NotificationService notifications, AvatarService avatars) {
+        this.avatars = avatars;
         this.notifications = notifications;
         this.publication = publication;
         this.comments = comments;
@@ -70,6 +74,24 @@ public class ModerationService {
         if (!owner.equals(actor.id())) {
             notifications.notifyModeration(owner, type, bookId, chapterId, reason.trim());
         }
+    }
+
+    /**
+     * Retira só a imagem imprópria, sem tirar a obra do ar.
+     */
+    public void removeCover(UUID id, String reason, SessionUser actor) {
+        Book book = publication.removeCover(id);
+        notifyAuthor(book, NotificationType.CONTENT_HIDDEN, reason, actor);
+        audit.record(actor.id(), "COVER_REMOVED", "books/" + id, Map.of("reason", reason.trim()));
+    }
+
+    public void removeAvatar(UUID userId, String reason, SessionUser actor) {
+        actor.requireIndependentReview(userId);
+        if (!avatars.remove(userId)) {
+            throw ApiException.conflict("NO_AVATAR", "Esta conta não tem foto.");
+        }
+        notify(userId, NotificationType.CONTENT_HIDDEN, null, null, reason, actor);
+        audit.record(actor.id(), "AVATAR_REMOVED", "users/" + userId, Map.of("reason", reason.trim()));
     }
 
     public void hideBook(UUID id, String reason, SessionUser actor) {

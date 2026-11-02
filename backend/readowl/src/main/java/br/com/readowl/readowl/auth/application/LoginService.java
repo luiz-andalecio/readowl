@@ -106,7 +106,7 @@ public class LoginService {
                 .map(user -> new SessionResponse(true, new SessionResponse.User(
                         user.getId(), user.getUsername(), user.getName(), user.getRole(), user.hasPassword(),
                         accounts.existsByUserIdAndProvider(user.getId(), GoogleAccountService.PROVIDER),
-                        user.hasAcceptedTerms(properties.terms().version()))))
+                        user.hasAcceptedTerms(properties.terms().version()), user.getAvatarUrl())))
                 .orElseGet(SessionResponse::anonymous);
     }
 }

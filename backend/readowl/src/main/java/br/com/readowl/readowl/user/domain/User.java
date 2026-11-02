@@ -69,6 +69,10 @@ public class User extends BaseEntity {
 
     private Instant termsAcceptedAt;
 
+    private String avatarKey;
+
+    private String avatarUrl;
+
     public User(String name, String username, String email, String passwordHash) {
         this.name = name.trim();
         this.username = normalizeUsername(username);
@@ -142,11 +146,18 @@ public class User extends BaseEntity {
         this.email = "removido-" + suffix + "@removido.invalid";
         this.passwordHash = null;
         this.description = null;
+        this.avatarKey = null;
+        this.avatarUrl = null;
         this.role = Role.USER;
         this.status = UserStatus.DELETED;
         this.emailVerifiedAt = null;
         this.emailNewChapters = false;
         this.deletedAt = at;
+    }
+
+    public void changeAvatar(String key, String url) {
+        this.avatarKey = key;
+        this.avatarUrl = url;
     }
 
     public void changeUsername(String username) {
