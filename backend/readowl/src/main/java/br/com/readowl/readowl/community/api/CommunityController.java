@@ -57,7 +57,7 @@ class CommunityController {
         this.views = views;
     }
 
-    record CommentRequest(@NotBlank @Size(max = Comment.MAX_CONTENT_LENGTH) String content) {
+    record CommentRequest(@NotBlank @Size(max = Comment.MAX_CONTENT_LENGTH) String content, @Size(max = 1000) String imageUrl) {
     }
 
     record RatingRequest(@NotNull @Min(1) @Max(5) Integer score) {
@@ -78,7 +78,7 @@ class CommunityController {
     @ResponseStatus(HttpStatus.CREATED)
     CommentResponse commentOnBook(@AuthenticationPrincipal SessionUser principal, @PathVariable UUID bookId,
                                   @Valid @RequestBody CommentRequest body, HttpServletRequest request) {
-        return comments.commentOnBook(bookId, body.content(), principal, ClientAddress.of(request));
+        return comments.commentOnBook(bookId, body.content(), body.imageUrl(), principal, ClientAddress.of(request));
     }
 
     @GetMapping("/chapters/{chapterId}/comments")
@@ -93,7 +93,7 @@ class CommunityController {
     @ResponseStatus(HttpStatus.CREATED)
     CommentResponse commentOnChapter(@AuthenticationPrincipal SessionUser principal, @PathVariable UUID chapterId,
                                      @Valid @RequestBody CommentRequest body, HttpServletRequest request) {
-        return comments.commentOnChapter(chapterId, body.content(), principal, ClientAddress.of(request));
+        return comments.commentOnChapter(chapterId, body.content(), body.imageUrl(), principal, ClientAddress.of(request));
     }
 
     @GetMapping("/comments/{commentId}/replies")
@@ -108,7 +108,7 @@ class CommunityController {
     @ResponseStatus(HttpStatus.CREATED)
     CommentResponse reply(@AuthenticationPrincipal SessionUser principal, @PathVariable UUID commentId,
                           @Valid @RequestBody CommentRequest body, HttpServletRequest request) {
-        return comments.reply(commentId, body.content(), principal, ClientAddress.of(request));
+        return comments.reply(commentId, body.content(), body.imageUrl(), principal, ClientAddress.of(request));
     }
 
     @PutMapping("/comments/{commentId}/like")
@@ -132,7 +132,7 @@ class CommunityController {
     @PatchMapping("/comments/{commentId}")
     CommentResponse editComment(@AuthenticationPrincipal SessionUser principal, @PathVariable UUID commentId,
                                 @Valid @RequestBody CommentRequest body, HttpServletRequest request) {
-        return comments.edit(commentId, body.content(), principal, ClientAddress.of(request));
+        return comments.edit(commentId, body.content(), body.imageUrl(), principal, ClientAddress.of(request));
     }
 
     @DeleteMapping("/comments/{commentId}")

@@ -17,6 +17,7 @@ import lombok.Getter;
 import lombok.NoArgsConstructor;
 
 import java.time.Instant;
+import java.util.Objects;
 
 @Entity
 @Table(name = "comments")
@@ -31,6 +32,11 @@ public class Comment extends BaseEntity {
     @Size(max = MAX_CONTENT_LENGTH)
     @Column(nullable = false, length = MAX_CONTENT_LENGTH)
     private String content;
+
+    // Fica em outro site: guardamos só o endereço.
+    @Size(max = 1000)
+    @Column(length = 1000)
+    private String imageUrl;
 
     @ManyToOne(optional = false, fetch = FetchType.LAZY)
     @JoinColumn(name = "user_id", nullable = false)
@@ -58,8 +64,9 @@ public class Comment extends BaseEntity {
     @Column(insertable = false, updatable = false)
     private Instant contentPurgedAt;
 
-    public Comment(String content, User user, Book book, Chapter chapter, Comment parent) {
+    public Comment(String content, String imageUrl, User user, Book book, Chapter chapter, Comment parent) {
         this.content = content;
+        this.imageUrl = imageUrl;
         this.user = user;
         this.book = book;
         this.chapter = chapter;
@@ -70,9 +77,10 @@ public class Comment extends BaseEntity {
         return deletedAt != null;
     }
 
-    public void edit(String content, Instant at) {
-        if (!content.equals(this.content)) {
+    public void edit(String content, String imageUrl, Instant at) {
+        if (!content.equals(this.content) || !Objects.equals(imageUrl, this.imageUrl)) {
             this.content = content;
+            this.imageUrl = imageUrl;
             this.editedAt = at;
         }
     }

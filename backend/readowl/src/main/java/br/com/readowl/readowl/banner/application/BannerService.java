@@ -3,7 +3,7 @@ package br.com.readowl.readowl.banner.application;
 import br.com.readowl.readowl.banner.domain.Banner;
 import br.com.readowl.readowl.banner.infrastructure.BannerRepository;
 import br.com.readowl.readowl.shared.api.PageResponse;
-import br.com.readowl.readowl.media.application.ExternalImages;
+import br.com.readowl.readowl.media.application.StoredImages;
 import br.com.readowl.readowl.shared.exception.ApiException;
 import br.com.readowl.readowl.shared.text.ExternalUrls;
 import org.springframework.data.domain.Pageable;
@@ -15,22 +15,22 @@ import java.util.List;
 import java.util.UUID;
 
 /**
- * As imagens são endereços externos até a etapa de mídia. Só HTTPS: bloqueia javascript: e outros esquemas
- * que chegariam a um link ou imagem da página inicial.
+ * A imagem tem rota própria, em {@link BannerImageService}. O link é só HTTPS: bloqueia javascript: e outros esquemas
+ * que chegariam à página inicial.
  */
 @Service
 @Transactional
 public class BannerService {
 
     private final BannerRepository banners;
-    private final ExternalImages images;
+    private final StoredImages images;
 
-    BannerService(BannerRepository banners, ExternalImages images) {
+    BannerService(BannerRepository banners, StoredImages images) {
         this.banners = banners;
         this.images = images;
     }
 
-    public record BannerData(String name, String imageUrl, String linkUrl, int position, boolean enabled,
+    public record BannerData(String name, String linkUrl, int position, boolean enabled,
                              Instant activeFrom, Instant activeUntil) {
     }
 
@@ -67,7 +67,7 @@ public class BannerService {
 
     public BannerView create(BannerData data) {
         validate(data);
-        return BannerView.from(banners.saveAndFlush(new Banner(data.name().trim(), data.imageUrl().trim(),
+        return BannerView.from(banners.saveAndFlush(new Banner(data.name().trim(),
                 data.linkUrl().trim(), data.position(), data.enabled(), data.activeFrom(), data.activeUntil())));
     }
 
@@ -82,23 +82,26 @@ public class BannerService {
             throw ApiException.conflict("BANNER_CONFLICT", "Este banner foi alterado por outra pessoa. Recarregue e tente novamente.")
                     .withProperty("currentVersion", banner.getVersion());
         }
-        banner.update(data.name().trim(), data.imageUrl().trim(), data.linkUrl().trim(), data.position(),
+        banner.update(data.name().trim(), data.linkUrl().trim(), data.position(),
                 data.enabled(), data.activeFrom(), data.activeUntil());
         return BannerView.from(banners.saveAndFlush(banner));
     }
 
     public void delete(UUID id) {
-        banners.delete(require(id));
+        Banner banner = require(id);
+        images.release(banner.getImageKey());
+        banners.delete(banner);
     }
 
     private Banner require(UUID id) {
-        return banners.findById(id).orElseThrow(() -> ApiException.notFound("BANNER_NOT_FOUND", "Banner não encontrado."));
+        return banners.findById(id).orElseThrow(BannerService::notFound);
+    }
+
+    static ApiException notFound() {
+        return ApiException.notFound("BANNER_NOT_FOUND", "Banner não encontrado.");
     }
 
     private void validate(BannerData data) {
-        if (!images.isAllowed(data.imageUrl())) {
-            throw ApiException.badRequest("INVALID_BANNER_URL", "Use uma imagem com https://, em um dos sites permitidos.");
-        }
         requireHttps(data.linkUrl());
         if (data.activeFrom() != null && data.activeUntil() != null && !data.activeUntil().isAfter(data.activeFrom())) {
             throw ApiException.badRequest("INVALID_BANNER_PERIOD", "O fim do período deve ser depois do início.");

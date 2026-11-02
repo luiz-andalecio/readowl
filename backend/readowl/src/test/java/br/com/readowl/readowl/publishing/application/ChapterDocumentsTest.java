@@ -14,7 +14,7 @@ class ChapterDocumentsTest {
     private static final JsonMapper JSON = JsonMapper.builder().build();
 
     private static ChapterDocuments.Rendered render(String json) {
-        return ChapterDocuments.render(JSON.readTree(json));
+        return ChapterDocuments.render(JSON.readTree(json), url -> url.trim().startsWith("https://i.imgur.com/"));
     }
 
     private static String paragraph(String text) {
@@ -53,6 +53,87 @@ class ChapterDocumentsTest {
 
         assertThat(rendered.html()).doesNotContain("<script").doesNotContain("<img").contains("&lt;script&gt;");
         assertThat(rendered.plainText()).contains("<script>");
+    }
+
+    private static String image(String attrs) {
+        return "{\"type\":\"doc\",\"content\":[{\"type\":\"image\",\"attrs\":" + attrs + "}]}";
+    }
+
+    @Test
+    void anImageBecomesATagWithEscapedAttributes() {
+        ChapterDocuments.Rendered rendered = render(image("""
+                {"src":"https://i.imgur.com/a.jpg?x=1&y=2","alt":"\\"><script>alert(1)</script>","title":"Arte"}"""));
+
+        assertThat(rendered.html()).isEqualTo("<img src=\"https://i.imgur.com/a.jpg?x=1&amp;y=2\" alt=\"&quot;&gt;&lt;script&gt;alert(1)&lt;/script&gt;\""
+                + " title=\"Arte\" loading=\"lazy\" referrerpolicy=\"no-referrer\">");
+    }
+
+    @Test
+    void theEditorMayLeaveTheOptionalImageFieldsEmpty() {
+        assertThat(render(image("""
+                {"src":"https://i.imgur.com/a.jpg","alt":null,"title":null}""")).html())
+                .isEqualTo("<img src=\"https://i.imgur.com/a.jpg\" alt=\"\" loading=\"lazy\" referrerpolicy=\"no-referrer\">");
+    }
+
+    @Test
+    void anImageAddressCannotCloseTheAttribute() {
+        assertThat(render(image("""
+                {"src":"https://i.imgur.com/a.jpg\\" onerror=\\"alert(1)"}""")).html()).doesNotContain("\" onerror");
+    }
+
+    @Test
+    void aChapterWithOnlyImagesIsNotBlankButHasNoText() {
+        ChapterDocuments.Rendered rendered = render(image("{\"src\":\"https://i.imgur.com/a.jpg\"}"));
+
+        assertThat(rendered.isBlank()).isFalse();
+        assertThat(rendered.plainText()).isEmpty();
+    }
+
+    @Test
+    void imagesCanBeInsideQuotesAndLists() {
+        assertThat(render("""
+                {"type":"doc","content":[{"type":"blockquote","content":[{"type":"image","attrs":{"src":"https://i.imgur.com/a.jpg"}}]}]}""").html())
+                .startsWith("<blockquote><img ");
+    }
+
+    @Test
+    void thereIsALimitOfImages() {
+        String one = "{\"type\":\"image\",\"attrs\":{\"src\":\"https://i.imgur.com/a.jpg\"}}";
+        String allowed = "{\"type\":\"doc\",\"content\":[" + String.join(",", java.util.Collections.nCopies(200, one)) + "]}";
+        String tooMany = "{\"type\":\"doc\",\"content\":[" + String.join(",", java.util.Collections.nCopies(201, one)) + "]}";
+
+        assertThat(render(allowed).isBlank()).isFalse();
+        assertThatThrownBy(() -> render(tooMany)).isInstanceOf(ApiException.class);
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {
+            "{}",
+            "{\"src\":1}",
+            "{\"src\":null}",
+            "{\"src\":\"https://fora.example.com/a.jpg\"}",
+            "{\"src\":\"http://i.imgur.com/a.jpg\"}",
+            "{\"src\":\"data:image/png;base64,AAAA\"}",
+            "{\"src\":\"https://i.imgur.com/a.jpg\",\"onerror\":\"alert(1)\"}",
+            "{\"src\":\"https://i.imgur.com/a.jpg\",\"style\":\"x\"}",
+            "{\"src\":\"https://i.imgur.com/a.jpg\",\"alt\":1}",
+            "{\"src\":\"https://i.imgur.com/a.jpg\",\"title\":[]}"
+    })
+    void imagesOutsideTheRulesAreRefused(String attrs) {
+        assertThatThrownBy(() -> render(image(attrs)))
+                .isInstanceOf(ApiException.class)
+                .extracting(ex -> ((ApiException) ex).getCode())
+                .isEqualTo("INVALID_DOCUMENT");
+    }
+
+    @Test
+    void anImageCannotHaveContentOrALongDescriptionOrSitInsideAParagraph() {
+        for (String json : java.util.List.of(
+                "{\"type\":\"doc\",\"content\":[{\"type\":\"image\",\"attrs\":{\"src\":\"https://i.imgur.com/a.jpg\"},\"content\":[{\"type\":\"paragraph\"}]}]}",
+                image("{\"src\":\"https://i.imgur.com/a.jpg\",\"alt\":\"" + "a".repeat(501) + "\"}"),
+                "{\"type\":\"doc\",\"content\":[{\"type\":\"paragraph\",\"content\":[{\"type\":\"image\",\"attrs\":{\"src\":\"https://i.imgur.com/a.jpg\"}}]}]}")) {
+            assertThatThrownBy(() -> render(json)).isInstanceOf(ApiException.class);
+        }
     }
 
     @ParameterizedTest

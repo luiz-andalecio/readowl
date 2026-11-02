@@ -54,7 +54,7 @@ public class PersonalDataExport {
             section(json, "commentLikes", "SELECT comment_id, created_at FROM comment_likes WHERE user_id = ?", userId);
             section(json, "readingProgress", "SELECT * FROM reading_progress WHERE user_id = ?", userId);
             batches(json, "comments", """
-                    SELECT id, book_id, chapter_id, parent_id, content, edited_at, deleted_at, moderated_at, created_at
+                    SELECT id, book_id, chapter_id, parent_id, content, image_url, edited_at, deleted_at, moderated_at, created_at
                     FROM comments WHERE user_id = ? AND id > ? ORDER BY id LIMIT ?
                     """, userId);
             batches(json, "notifications", """
@@ -79,7 +79,7 @@ public class PersonalDataExport {
         json.writeName("books");
         json.writeStartArray();
         List<Map<String, Object>> books = rows("""
-                SELECT id, title, acronym, slug, synopsis, cover_url, release_frequency, status, publication_state, content_rating,
+                SELECT id, title, acronym, slug, synopsis, cover_url, banner_url, release_frequency, status, publication_state, content_rating,
                        created_at, updated_at
                 FROM books WHERE author_id = ? ORDER BY id
                 """, userId);

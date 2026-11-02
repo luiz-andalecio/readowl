@@ -54,7 +54,7 @@ public class ReadingService {
     }
 
     public record PublicBook(UUID id, String title, String acronym, String slug, String synopsis,
-                             String coverUrl, String releaseFrequency, BookStatus status, ContentRating contentRating, long viewCount, AuthorView author,
+                             String coverUrl, String bannerUrl, String releaseFrequency, BookStatus status, ContentRating contentRating, long viewCount, AuthorView author,
                              List<TaxonomyItem> genres, List<TaxonomyItem> tags, Instant lastChapterPublishedAt,
                              Instant createdAt, List<PublicVolume> volumes, long publishedChapters) {
     }
@@ -72,7 +72,7 @@ public class ReadingService {
     public PublicBook book(String slug) {
         Book book = publicBooks.requireBySlug(slug);
         return new PublicBook(book.getId(), book.getTitle(), book.getAcronym(), book.getSlug(), book.getSynopsis(),
-                book.getCoverUrl(), book.getReleaseFrequency(), book.getStatus(), book.getContentRating(), book.getViewCount(), author(book),
+                book.getCoverUrl(), book.getBannerUrl(), book.getReleaseFrequency(), book.getStatus(), book.getContentRating(), book.getViewCount(), author(book),
                 book.getGenres().stream().map(TaxonomyItem::from).sorted(Comparator.comparing(TaxonomyItem::name)).toList(),
                 book.getTags().stream().map(TaxonomyItem::from).sorted(Comparator.comparing(TaxonomyItem::name)).toList(),
                 book.getLastChapterPublishedAt(), book.getCreatedAt(),

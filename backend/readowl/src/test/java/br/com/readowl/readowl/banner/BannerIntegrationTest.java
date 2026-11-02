@@ -3,7 +3,10 @@ package br.com.readowl.readowl.banner;
 import br.com.readowl.readowl.support.AccountFixtures;
 import br.com.readowl.readowl.support.ApiClient;
 import br.com.readowl.readowl.support.ApiIntegrationTest;
+import br.com.readowl.readowl.support.FakeRemoteImages;
 import br.com.readowl.readowl.support.RecordingMailSender;
+import br.com.readowl.readowl.support.RecordingObjectStorage;
+import br.com.readowl.readowl.support.TestImages;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -28,12 +31,20 @@ class BannerIntegrationTest {
 
     private static final String PUBLIC = "/api/v1/banners";
     private static final String ADMIN = "/api/v1/admin/banners";
+    private static final String LINK = "https://i.imgur.com/a.png";
+    private static final String CDN = "https://cdn.readowl.test/";
 
     @LocalServerPort
     private int port;
 
     @Autowired
     private RecordingMailSender mail;
+
+    @Autowired
+    private RecordingObjectStorage storage;
+
+    @Autowired
+    private FakeRemoteImages remote;
 
     @Autowired
     private JdbcTemplate jdbc;
@@ -45,6 +56,9 @@ class BannerIntegrationTest {
         accounts = new AccountFixtures(port, mail, jdbc);
         accounts.resetRateLimits();
         mail.setFailing(false);
+        storage.setFailing(false);
+        remote.reset();
+        remote.serve(LINK, TestImages.png(1200, 400));
         jdbc.update("DELETE FROM banners");
     }
 
@@ -56,7 +70,7 @@ class BannerIntegrationTest {
     }
 
     private static Map<String, Object> banner(String name, int position) {
-        return body("name", name, "imageUrl", "https://i.imgur.com/a.png", "linkUrl", "https://readowl.example.com/obras/a",
+        return body("name", name, "linkUrl", "https://readowl.example.com/obras/a",
                 "position", position, "enabled", true);
     }
 
@@ -66,10 +80,20 @@ class BannerIntegrationTest {
         return copy;
     }
 
-    private static String create(ApiClient admin, Map<String, Object> data) {
+    private static String createWithoutImage(ApiClient admin, Map<String, Object> data) {
         ApiClient.Response created = admin.post(ADMIN, data);
         assertThat(created.status()).isEqualTo(201);
         return created.json().at("/id").asString();
+    }
+
+    private static String create(ApiClient admin, Map<String, Object> data) {
+        String id = createWithoutImage(admin, data);
+        assertThat(admin.put(ADMIN + "/" + id + "/image", body("url", LINK)).status()).isEqualTo(200);
+        return id;
+    }
+
+    private static String keyOf(String url) {
+        return url.substring(CDN.length());
     }
 
     private List<String> activeNames() {
@@ -103,6 +127,8 @@ class BannerIntegrationTest {
             assertThat(other.get(ADMIN).status()).isEqualTo(403);
             assertThat(other.post(ADMIN, banner("X", 1)).status()).isEqualTo(403);
             assertThat(other.delete(ADMIN + "/" + id).status()).isEqualTo(403);
+            assertThat(other.put(ADMIN + "/" + id + "/image", body("url", LINK)).status()).isEqualTo(403);
+            assertThat(other.putBytes(ADMIN + "/" + id + "/image", TestImages.png(1200, 400), "image/png").status()).isEqualTo(403);
         }
         assertThat(withRole("ROOT").get(ADMIN).json().at("/totalElements").asLong()).isEqualTo(1);
         assertThat(admin.postWithoutCsrf(ADMIN, banner("X", 1)).status()).isEqualTo(403);
@@ -128,9 +154,85 @@ class BannerIntegrationTest {
     void anImageOutsideTheAllowedSitesIsRefusedButALinkCanGoAnywhere() {
         ApiClient admin = withRole("ADMIN");
         String outside = "https://site-desconhecido.example.com/a.png";
+        String id = createWithoutImage(admin, banner("X", 1));
+        remote.downloads().clear();
 
-        assertThat(admin.post(ADMIN, with(banner("X", 1), "imageUrl", outside)).code()).isEqualTo("INVALID_BANNER_URL");
+        assertThat(admin.put(ADMIN + "/" + id + "/image", body("url", outside)).code()).isEqualTo("INVALID_BANNER_URL");
+        assertThat(remote.downloads()).isEmpty();
         assertThat(admin.post(ADMIN, with(banner("X", 1), "linkUrl", outside)).status()).isEqualTo(201);
+    }
+
+    @Test
+    void aBannerWithoutAnImageStaysOffTheHomePageUntilItGetsOne() {
+        ApiClient admin = withRole("ADMIN");
+
+        ApiClient.Response created = admin.post(ADMIN, banner("Sem imagem", 1));
+
+        assertThat(created.json().at("/imageUrl").isNull()).isTrue();
+        assertThat(activeNames()).isEmpty();
+        assertThat(admin.put(ADMIN + "/" + created.json().at("/id").asString() + "/image", body("url", LINK)).status()).isEqualTo(200);
+        assertThat(activeNames()).containsExactly("Sem imagem");
+    }
+
+    @Test
+    void theImageCanBeAFileOrALinkAndACopyIsStored() {
+        ApiClient admin = withRole("ADMIN");
+        String id = createWithoutImage(admin, banner("Destaque", 1));
+        String path = ADMIN + "/" + id + "/image";
+
+        String fromFile = admin.putBytes(path, TestImages.png(1200, 400), "image/png").json().at("/imageUrl").asString();
+        assertThat(fromFile).startsWith(CDN + "banners/" + id + "/");
+        assertThat(storage.holds(keyOf(fromFile))).isTrue();
+
+        ApiClient.Response fromLink = admin.put(path, body("url", LINK));
+        String copy = fromLink.json().at("/imageUrl").asString();
+        assertThat(copy).startsWith(CDN + "banners/" + id + "/");
+        assertThat(remote.downloads()).containsExactly(LINK);
+        assertThat(storage.holds(keyOf(copy))).isTrue();
+        assertThat(storage.holds(keyOf(fromFile))).isFalse();
+        assertThat(accounts.client().get(PUBLIC).json().at("/0/imageUrl").asString()).isEqualTo(copy);
+    }
+
+    @Test
+    void theImageFollowsTheSizeRules() {
+        ApiClient admin = withRole("ADMIN");
+        String path = ADMIN + "/" + createWithoutImage(admin, banner("Destaque", 1)) + "/image";
+
+        assertThat(admin.putBytes(path, TestImages.png(1199, 400), "image/png").code()).isEqualTo("IMAGE_TOO_SMALL");
+        assertThat(admin.putBytes(path, TestImages.png(1920, 1080), "image/png").code()).isEqualTo("IMAGE_WRONG_PROPORTION");
+        assertThat(admin.putBytes(path, "texto".getBytes(), "image/png").code()).isEqualTo("INVALID_IMAGE");
+        assertThat(admin.putBytes(path, TestImages.png(1200, 400), "image/svg+xml").status()).isEqualTo(415);
+    }
+
+    @Test
+    void deletingTheBannerDeletesTheFile() {
+        ApiClient admin = withRole("ADMIN");
+        String id = createWithoutImage(admin, banner("Destaque", 1));
+        String url = admin.putBytes(ADMIN + "/" + id + "/image", TestImages.png(1200, 400), "image/png").json().at("/imageUrl").asString();
+
+        assertThat(admin.delete(ADMIN + "/" + id).status()).isEqualTo(204);
+
+        assertThat(storage.holds(keyOf(url))).isFalse();
+    }
+
+    @Test
+    void anImageSavedAsALinkBeforeThisChangeKeepsWorkingUntilReplaced() {
+        ApiClient admin = withRole("ADMIN");
+        String id = createWithoutImage(admin, banner("Antigo", 1));
+        jdbc.update("UPDATE banners SET image_url = 'https://i.imgur.com/antigo.png' WHERE id = ?::uuid", id);
+
+        assertThat(accounts.client().get(PUBLIC).json().at("/0/imageUrl").asString()).isEqualTo("https://i.imgur.com/antigo.png");
+        assertThat(remote.downloads()).isEmpty();
+
+        assertThat(admin.putBytes(ADMIN + "/" + id + "/image", TestImages.png(1200, 400), "image/png").json().at("/imageUrl").asString()).startsWith(CDN);
+    }
+
+    @Test
+    void anUnknownBannerDoesNotReachTheDownload() {
+        ApiClient admin = withRole("ADMIN");
+
+        assertThat(admin.put(ADMIN + "/" + UUID.randomUUID() + "/image", body("url", LINK)).code()).isEqualTo("BANNER_NOT_FOUND");
+        assertThat(remote.downloads()).isEmpty();
     }
 
     @Test
@@ -139,8 +241,9 @@ class BannerIntegrationTest {
         List<String> invalid = List.of("http://cdn.example.com/a.png", "javascript:alert(1)", "data:text/html,oi",
                 "//cdn.example.com/a.png", "/obras/a", "https://", "https://usuario@cdn.example.com/a", "https://a b.com");
 
+        String id = createWithoutImage(admin, banner("X", 1));
         for (String url : invalid) {
-            assertThat(admin.post(ADMIN, with(banner("X", 1), "imageUrl", url)).code()).as(url).isEqualTo("INVALID_BANNER_URL");
+            assertThat(admin.put(ADMIN + "/" + id + "/image", body("url", url)).code()).as(url).isEqualTo("INVALID_BANNER_URL");
             assertThat(admin.post(ADMIN, with(banner("X", 1), "linkUrl", url)).code()).as(url).isEqualTo("INVALID_BANNER_URL");
         }
         assertThat(activeNames()).isEmpty();

@@ -6,8 +6,8 @@ import java.util.Locale;
 import java.util.Optional;
 
 /**
- * Endereços de outros sites informados por usuários, abertos só pelo navegador de quem lê: o servidor nunca os acessa,
- * o que evita que alguém o use para chegar à rede interna. Por isso não dá para conferir aqui se o endereço é uma imagem.
+ * Endereços de outros sites informados por usuários. Esta classe só confere o formato. Quase todos são abertos só pelo
+ * navegador de quem lê. O único acesso pelo servidor é o download de capas e banners, com as proteções de HttpRemoteImages.
  */
 public final class ExternalUrls {
 

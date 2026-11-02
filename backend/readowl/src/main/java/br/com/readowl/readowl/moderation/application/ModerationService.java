@@ -85,6 +85,12 @@ public class ModerationService {
         audit.record(actor.id(), "COVER_REMOVED", "books/" + id, Map.of("reason", reason.trim()));
     }
 
+    public void removeBookBanner(UUID id, String reason, SessionUser actor) {
+        Book book = publication.removeBanner(id);
+        notifyAuthor(book, NotificationType.CONTENT_HIDDEN, reason, actor);
+        audit.record(actor.id(), "BOOK_BANNER_REMOVED", "books/" + id, Map.of("reason", reason.trim()));
+    }
+
     public void removeAvatar(UUID userId, String reason, SessionUser actor) {
         actor.requireIndependentReview(userId);
         if (!avatars.remove(userId)) {

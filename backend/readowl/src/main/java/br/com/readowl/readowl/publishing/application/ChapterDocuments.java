@@ -9,13 +9,15 @@ import java.util.Collection;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.function.Predicate;
 
 /**
  * Valida o documento do editor (versão 1 do formato) e gera o HTML de leitura e o texto puro.
  * <p>
  * A validação é por lista permitida: tipo, marca, atributo ou campo desconhecido recusa o documento.
  * O HTML é escrito aqui, com todo texto escapado. Nenhum HTML do cliente é interpretado, então não há
- * o que sanitizar. Valores de atributo só entram no HTML depois de confirmados contra uma lista fixa.
+ * o que sanitizar. Valores de atributo só entram no HTML depois de confirmados contra uma lista fixa. Imagens ficam em outros
+ * sites: o documento guarda só o endereço, conferido contra a lista de sites permitidos, e o servidor nunca as baixa.
  */
 final class ChapterDocuments {
 
@@ -25,9 +27,11 @@ final class ChapterDocuments {
     private static final int MAX_JSON_BYTES = 2 * 1024 * 1024;
     private static final int MAX_TEXT_LENGTH = 500_000;
     private static final int MAX_DEPTH = 20;
+    private static final int MAX_IMAGES = 200;
+    private static final int MAX_IMAGE_TEXT_LENGTH = 500;
 
     private static final Set<String> BLOCKS =
-            Set.of("paragraph", "heading", "blockquote", "bulletList", "orderedList", "horizontalRule");
+            Set.of("paragraph", "heading", "blockquote", "bulletList", "orderedList", "horizontalRule", "image");
     private static final Set<String> NODE_FIELDS = Set.of("type", "attrs", "content", "marks", "text");
     private static final Map<String, String> MARK_TAGS =
             Map.of("bold", "strong", "italic", "em", "underline", "u", "strike", "s");
@@ -36,14 +40,14 @@ final class ChapterDocuments {
     private ChapterDocuments() {
     }
 
-    record Rendered(String json, String plainText, String html) {
+    record Rendered(String json, String plainText, String html, boolean hasImages) {
 
         boolean isBlank() {
-            return plainText.isBlank();
+            return plainText.isBlank() && !hasImages;
         }
     }
 
-    static Rendered render(JsonNode document) {
+    static Rendered render(JsonNode document, Predicate<String> allowedImage) {
         if (document == null || !document.isObject()) {
             throw invalid("o documento deve ser um objeto");
         }
@@ -51,9 +55,9 @@ final class ChapterDocuments {
         if (json.getBytes(StandardCharsets.UTF_8).length > MAX_JSON_BYTES) {
             throw invalid("o documento excede o tamanho máximo");
         }
-        Output output = new Output();
+        Output output = new Output(allowedImage);
         renderRoot(document, output);
-        return new Rendered(json, output.plainText.toString().strip(), output.html.toString());
+        return new Rendered(json, output.plainText.toString().strip(), output.html.toString(), output.images > 0);
     }
 
     private static void renderRoot(JsonNode node, Output output) {
@@ -89,6 +93,7 @@ final class ChapterDocuments {
                 output.html.append("<hr>");
                 output.plainText.append('\n');
             }
+            case "image" -> renderImage(node, output);
             case "blockquote" -> {
                 requireAttrs(node, Set.of());
                 output.html.append("<blockquote>");
@@ -107,6 +112,42 @@ final class ChapterDocuments {
                 renderList(orderedListOpening(node), "</ol>", node, output, depth);
             }
         }
+    }
+
+    private static void renderImage(JsonNode node, Output output) {
+        requireAttrs(node, Set.of("src", "alt", "title"));
+        if (!childrenOf(node).isEmpty()) {
+            throw invalid("image não aceita conteúdo");
+        }
+        JsonNode src = node.path("attrs").get("src");
+        if (src == null || !src.isString() || !output.allowedImage.test(src.stringValue())) {
+            throw invalid("a imagem precisa estar em um dos sites permitidos");
+        }
+        if (++output.images > MAX_IMAGES) {
+            throw invalid("o documento excede o limite de imagens");
+        }
+        output.html.append("<img src=\"").append(escaped(src.stringValue().trim())).append("\" alt=\"").append(imageText(node, "alt")).append('"');
+        String title = imageText(node, "title");
+        if (!title.isEmpty()) {
+            output.html.append(" title=\"").append(title).append('"');
+        }
+        output.html.append(" loading=\"lazy\" referrerpolicy=\"no-referrer\">");
+        output.plainText.append('\n');
+    }
+
+    private static String imageText(JsonNode node, String name) {
+        JsonNode value = node.path("attrs").get(name);
+        if (value == null || value.isNull()) {
+            return "";
+        }
+        if (!value.isString() || value.stringValue().length() > MAX_IMAGE_TEXT_LENGTH) {
+            throw invalid(name + " da imagem é inválido");
+        }
+        return escaped(value.stringValue());
+    }
+
+    private static String escaped(String text) {
+        return HtmlUtils.htmlEscape(text, StandardCharsets.UTF_8.name());
     }
 
     private static void renderList(String opening, String closing, JsonNode list, Output output, int depth) {
@@ -155,7 +196,7 @@ final class ChapterDocuments {
                 }
                 List<String> tags = markTags(node);
                 tags.forEach(tag -> output.html.append('<').append(tag).append('>'));
-                output.html.append(HtmlUtils.htmlEscape(text.stringValue(), StandardCharsets.UTF_8.name()));
+                output.html.append(escaped(text.stringValue()));
                 tags.reversed().forEach(tag -> output.html.append("</").append(tag).append('>'));
                 output.plainText.append(text.stringValue());
                 if (output.plainText.length() > MAX_TEXT_LENGTH) {
@@ -280,5 +321,11 @@ final class ChapterDocuments {
     private static final class Output {
         private final StringBuilder html = new StringBuilder();
         private final StringBuilder plainText = new StringBuilder();
+        private final Predicate<String> allowedImage;
+        private int images;
+
+        private Output(Predicate<String> allowedImage) {
+            this.allowedImage = allowedImage;
+        }
     }
 }

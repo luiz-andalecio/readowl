@@ -23,10 +23,15 @@ public class Banner extends BaseEntity {
     @Column(nullable = false, length = 200)
     private String name;
 
-    @NotBlank
+    // Sem imagem, o banner não aparece na página inicial.
     @Size(max = 1000)
-    @Column(nullable = false, length = 1000)
+    @Column(length = 1000)
     private String imageUrl;
+
+    // Sem chave, a imagem é um endereço externo salvo antes de as imagens irem para o armazenamento.
+    @Size(max = 200)
+    @Column(length = 200)
+    private String imageKey;
 
     @NotBlank
     @Size(max = 1000)
@@ -43,15 +48,17 @@ public class Banner extends BaseEntity {
 
     private Instant activeUntil;
 
-    public Banner(String name, String imageUrl, String linkUrl, int position, boolean enabled,
-                  Instant activeFrom, Instant activeUntil) {
-        update(name, imageUrl, linkUrl, position, enabled, activeFrom, activeUntil);
+    public Banner(String name, String linkUrl, int position, boolean enabled, Instant activeFrom, Instant activeUntil) {
+        update(name, linkUrl, position, enabled, activeFrom, activeUntil);
     }
 
-    public final void update(String name, String imageUrl, String linkUrl, int position, boolean enabled,
-                             Instant activeFrom, Instant activeUntil) {
+    public void changeImage(String key, String url) {
+        this.imageKey = key;
+        this.imageUrl = url;
+    }
+
+    public final void update(String name, String linkUrl, int position, boolean enabled, Instant activeFrom, Instant activeUntil) {
         this.name = name;
-        this.imageUrl = imageUrl;
         this.linkUrl = linkUrl;
         this.position = position;
         this.enabled = enabled;

@@ -41,7 +41,7 @@ public class RetentionTasks {
         step("notificacoes", () -> jdbc.update(
                 "DELETE FROM notifications WHERE created_at < now() - make_interval(secs => ?)", seconds(retention.notifications())));
         step("texto de comentarios excluidos", () -> jdbc.update("""
-                UPDATE comments c SET content = ?, content_purged_at = now()
+                UPDATE comments c SET content = ?, image_url = NULL, content_purged_at = now()
                 WHERE c.deleted_at < now() - make_interval(secs => ?) AND c.content_purged_at IS NULL
                   AND NOT EXISTS (SELECT 1 FROM reports r
                                   WHERE r.status = 'OPEN' AND r.target_type = 'COMMENT' AND r.target_id = c.id)

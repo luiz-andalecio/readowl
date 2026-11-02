@@ -1,5 +1,6 @@
 package br.com.readowl.readowl.publishing.application;
 
+import br.com.readowl.readowl.media.application.ExternalImages;
 import br.com.readowl.readowl.publishing.application.PublishingViews.DraftView;
 import br.com.readowl.readowl.publishing.domain.Chapter;
 import br.com.readowl.readowl.publishing.domain.ChapterDraft;
@@ -25,8 +26,11 @@ public class ChapterDraftService {
     private final ChapterDraftRepository drafts;
     private final JsonMapper jsonMapper;
     private final StorageQuota storage;
+    private final ExternalImages images;
 
-    ChapterDraftService(ChapterAccess access, ChapterDraftRepository drafts, JsonMapper jsonMapper, StorageQuota storage) {
+    ChapterDraftService(ChapterAccess access, ChapterDraftRepository drafts, JsonMapper jsonMapper, StorageQuota storage,
+                        ExternalImages images) {
+        this.images = images;
         this.access = access;
         this.drafts = drafts;
         this.jsonMapper = jsonMapper;
@@ -53,7 +57,7 @@ public class ChapterDraftService {
         Chapter chapter = access.requireManageable(chapterId, principal);
         ChapterDraft draft = requireDraft(chapter.getId());
         requireVersion(draft, expectedVersion);
-        ChapterDocuments.Rendered rendered = ChapterDocuments.render(document);
+        ChapterDocuments.Rendered rendered = ChapterDocuments.render(document, images::isAllowed);
         storage.requireRoomForDraft(chapter.getBook().getAuthor().getId(), rendered.json().length());
         draft.replaceDocument(rendered.json(), ChapterDocuments.FORMAT_VERSION);
         ChapterDraft saved = drafts.saveAndFlush(draft);

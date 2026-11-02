@@ -116,6 +116,13 @@ class ModerationController {
         moderation.removeCover(id, body.reason(), principal);
     }
 
+    @PostMapping("/moderation/books/{id}/remove-banner")
+    @ResponseStatus(HttpStatus.NO_CONTENT)
+    void removeBookBanner(@AuthenticationPrincipal SessionUser principal, @PathVariable UUID id,
+                          @Valid @RequestBody ActionRequest body) {
+        moderation.removeBookBanner(id, body.reason(), principal);
+    }
+
     @PostMapping("/moderation/users/{id}/remove-avatar")
     @ResponseStatus(HttpStatus.NO_CONTENT)
     void removeAvatar(@AuthenticationPrincipal SessionUser principal, @PathVariable UUID id,

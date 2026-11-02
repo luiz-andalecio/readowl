@@ -88,8 +88,8 @@ server {
 
     limit_conn connections 50;
 
-    # A aplicação recusa JSON acima de 3 MiB ao ler. Aqui o corpo nem chega a ela.
-    client_max_body_size 3m;
+    # Cabe uma capa ou banner de 5 MiB. Acima disso, o corpo nem chega à aplicação.
+    client_max_body_size 6m;
     client_header_timeout 10s;
     client_body_timeout 15s;
     send_timeout 30s;

@@ -174,7 +174,8 @@ public class ReportService {
             case BOOK -> {
                 Book book = publicBooks.requireById(id);
                 String cover = book.getCoverUrl() == null ? "" : "\n\nCapa: " + book.getCoverUrl();
-                yield new Target(book.getAuthor(), book.getTitle() + "\n\n" + book.getSynopsis() + cover);
+                String banner = book.getBannerUrl() == null ? "" : "\n\nBanner: " + book.getBannerUrl();
+                yield new Target(book.getAuthor(), book.getTitle() + "\n\n" + book.getSynopsis() + cover + banner);
             }
             case CHAPTER -> {
                 Chapter chapter = publicChapters.requirePublic(id);
@@ -186,7 +187,8 @@ public class ReportService {
             }
             case COMMENT -> {
                 Comment comment = comments.requireVisible(id);
-                yield new Target(comment.getUser(), comment.getContent());
+                String image = comment.getImageUrl() == null ? "" : "\n\nImagem: " + comment.getImageUrl();
+                yield new Target(comment.getUser(), comment.getContent() + image);
             }
             case USER -> {
                 User user = users.findById(id).filter(candidate -> candidate.isActive() && candidate.isEmailVerified())

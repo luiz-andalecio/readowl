@@ -75,6 +75,19 @@ public class Book extends BaseEntity {
     @Column(length = 1000)
     private String coverUrl;
 
+    // Sem chave, a capa é um endereço externo salvo antes de as imagens irem para o armazenamento.
+    @Size(max = 200)
+    @Column(length = 200)
+    private String coverKey;
+
+    @Size(max = 1000)
+    @Column(length = 1000)
+    private String bannerUrl;
+
+    @Size(max = 200)
+    @Column(length = 200)
+    private String bannerKey;
+
     // Alterado apenas por UPDATE atômico: não pode ser sobrescrito por uma entidade desatualizada.
     @Column(nullable = false, updatable = false)
     private long viewCount;
@@ -123,8 +136,14 @@ public class Book extends BaseEntity {
         return genres.stream().anyMatch(genre -> ADULT_GENRE.equals(genre.getName()));
     }
 
-    public void changeCover(String coverUrl) {
-        this.coverUrl = coverUrl;
+    public void changeCover(String key, String url) {
+        this.coverKey = key;
+        this.coverUrl = url;
+    }
+
+    public void changeBanner(String key, String url) {
+        this.bannerKey = key;
+        this.bannerUrl = url;
     }
 
     public static String normalizeAcronym(String acronym) {

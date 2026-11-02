@@ -2,7 +2,10 @@ package br.com.readowl.readowl.publishing.application;
 
 import br.com.readowl.readowl.book.application.BookAccess;
 import br.com.readowl.readowl.book.application.BookDetails;
+import br.com.readowl.readowl.book.application.BookImageService;
 import br.com.readowl.readowl.book.domain.Book;
+import br.com.readowl.readowl.media.application.ExternalImages;
+import br.com.readowl.readowl.media.application.StoredImageType;
 import br.com.readowl.readowl.publishing.application.PublishingViews.ChapterView;
 import br.com.readowl.readowl.publishing.application.PublishingViews.RevisionView;
 import br.com.readowl.readowl.publishing.domain.Chapter;
@@ -44,11 +47,15 @@ public class PublicationService {
     private final ApplicationEventPublisher events;
     private final ReadowlProperties.Limits limits;
     private final StorageQuota storage;
+    private final ExternalImages images;
+    private final BookImageService bookImages;
 
     PublicationService(BookAccess bookAccess, ChapterAccess chapterAccess, ChapterDraftService drafts,
                        ChapterRepository chapters, ChapterRevisionRepository revisions, UserService users,
                        JsonMapper jsonMapper, ApplicationEventPublisher events, ReadowlProperties properties,
-                       StorageQuota storage) {
+                       StorageQuota storage, ExternalImages images, BookImageService bookImages) {
+        this.images = images;
+        this.bookImages = bookImages;
         this.bookAccess = bookAccess;
         this.chapterAccess = chapterAccess;
         this.drafts = drafts;
@@ -74,7 +81,7 @@ public class PublicationService {
         ChapterDraftService.requireVersion(draft, draftVersion);
 
         JsonNode document = jsonMapper.readTree(draft.getDocument());
-        ChapterDocuments.Rendered rendered = ChapterDocuments.render(document);
+        ChapterDocuments.Rendered rendered = ChapterDocuments.render(document, images::isAllowed);
         if (rendered.isBlank()) {
             throw ApiException.badRequest("EMPTY_CHAPTER", "Escreva o capítulo antes de publicá-lo.");
         }
@@ -185,7 +192,17 @@ public class PublicationService {
         if (book.getCoverUrl() == null) {
             throw ApiException.conflict("NO_COVER", "Esta obra não tem capa.");
         }
-        book.changeCover(null);
+        bookImages.clear(book, StoredImageType.COVER);
+        chapters.flush();
+        return book;
+    }
+
+    public Book removeBanner(UUID bookId) {
+        Book book = bookAccess.requireLocked(bookId);
+        if (book.getBannerUrl() == null) {
+            throw ApiException.conflict("NO_BOOK_BANNER", "Esta obra não tem banner.");
+        }
+        bookImages.clear(book, StoredImageType.BOOK_BANNER);
         chapters.flush();
         return book;
     }

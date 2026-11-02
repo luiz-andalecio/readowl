@@ -5,7 +5,7 @@ import br.com.readowl.readowl.book.domain.BookStatus;
 import br.com.readowl.readowl.book.domain.ContentRating;
 import br.com.readowl.readowl.book.infrastructure.BookRepository;
 import br.com.readowl.readowl.book.infrastructure.BookSlugHistory;
-import br.com.readowl.readowl.media.application.ExternalImages;
+import br.com.readowl.readowl.media.application.StoredImages;
 import br.com.readowl.readowl.genre.application.TaxonomyService;
 import br.com.readowl.readowl.shared.api.PageResponse;
 import br.com.readowl.readowl.shared.audit.AuditTrail;
@@ -40,11 +40,11 @@ public class BookService {
     private final AuditTrail audit;
     private final ReadowlProperties.Limits limits;
     private final BookSlugHistory slugHistory;
-    private final ExternalImages images;
+    private final StoredImages images;
 
     BookService(BookRepository books, BookAccess access, UserService users, TaxonomyService taxonomy,
                 TransactionOperations transaction, RateLimiter rateLimiter, AuditTrail audit,
-                ReadowlProperties properties, BookSlugHistory slugHistory, ExternalImages images) {
+                ReadowlProperties properties, BookSlugHistory slugHistory, StoredImages images) {
         this.images = images;
         this.slugHistory = slugHistory;
         this.books = books;
@@ -58,14 +58,14 @@ public class BookService {
     }
 
     public record NewBook(String title, String acronym, String synopsis, String releaseFrequency,
-                          ContentRating contentRating, String coverUrl, List<UUID> genreIds, List<String> tagNames) {
+                          ContentRating contentRating, List<UUID> genreIds, List<String> tagNames) {
     }
 
     /**
      * Campos nulos não são alterados.
      */
     public record BookChanges(String title, String acronym, String synopsis, String releaseFrequency,
-                              BookStatus status, ContentRating contentRating, String coverUrl, List<UUID> genreIds, List<String> tagNames,
+                              BookStatus status, ContentRating contentRating, List<UUID> genreIds, List<String> tagNames,
                               Long version) {
     }
 
@@ -82,7 +82,6 @@ public class BookService {
             Book book = new Book(title, data.acronym(), slug, data.synopsis().trim(),
                     users.requireById(principal.id()));
             book.updateReleaseFrequency(Texts.blankToNull(data.releaseFrequency()));
-            book.changeCover(cover(data.coverUrl()));
             book.replaceGenres(taxonomy.requireGenres(data.genreIds()));
             book.changeContentRating(data.contentRating() != null ? data.contentRating() : book.getContentRating());
             book.replaceTags(taxonomy.resolveTags(data.tagNames() == null ? List.of() : data.tagNames()));
@@ -119,9 +118,6 @@ public class BookService {
             if (changes.status() != null) {
                 book.updateStatus(changes.status());
             }
-            if (changes.coverUrl() != null) {
-                book.changeCover(cover(changes.coverUrl()));
-            }
             if (changes.genreIds() != null) {
                 book.replaceGenres(taxonomy.requireGenres(changes.genreIds()));
             }
@@ -131,17 +127,6 @@ public class BookService {
             }
             return BookDetails.from(books.saveAndFlush(book));
         }));
-    }
-
-    /**
-     * A capa fica em um dos sites permitidos. Em branco, é removida.
-     */
-    private String cover(String url) {
-        String cover = Texts.blankToNull(url);
-        if (cover != null && !images.isAllowed(cover)) {
-            throw ApiException.badRequest("INVALID_COVER_URL", "Use o endereço completo da imagem, com https://, em um dos sites permitidos.");
-        }
-        return cover == null ? null : cover.trim();
     }
 
     /**
@@ -165,6 +150,8 @@ public class BookService {
             audit.record(principal.id(), "BOOK_DELETED", "books/" + id, Map.of("title", book.getTitle(), "slug", book.getSlug(),
                     "authorId", book.getAuthor().getId()));
         }
+        images.release(book.getCoverKey());
+        images.release(book.getBannerKey());
         books.delete(book);
     }
 

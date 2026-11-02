@@ -12,7 +12,7 @@ Para quem opera o Readowl e para a revisão jurídica. Descreve o que o sistema 
 4. **Texto de comentários após a exclusão da conta.** O texto continua publicado sem o autor. Confirmar se a anonimização basta, porque o texto pode identificar a pessoa.
 5. **Auditoria por 2 anos e cópias em denúncias.** Confirmar os prazos e a base legal para mantê-los depois da exclusão da conta.
 6. **Direito autoral.** As obras saem com a conta. Conferir se os termos precisam tratar disso.
-7. **Imagens em outros sites.** Capas, banners e fotos do Google abrem direto de sites como Imgur, ImgBB e Google, que recebem o IP de quem lê. Confirmar se a política de privacidade precisa informar isso.
+7. **Imagens em outros sites.** Fotos por link ou do Google, imagens de capítulos e de comentários, e capas e banners salvos como link antes da mudança para o armazenamento abrem direto de sites como Imgur, ImgBB e Google, que recebem o IP de quem lê. Confirmar se a política de privacidade precisa informar isso.
 8. **Bases legais, encarregado, transferência internacional** (e-mails, Google, provedor) e o canal de solicitações da LGPD ainda não foram definidos.
 
 ## O que é guardado e por quanto tempo
@@ -24,7 +24,7 @@ Os prazos ficam em `readowl.retention.*`. A tarefa diária `RetentionTasks` apli
 | Conta não confirmada | `users` | 7 dias | Libera o nome de usuário e evita acumular dados de quem não concluiu o cadastro |
 | Conta ativa | `users` | Até a exclusão | Uso do serviço |
 | Notificações | `notifications` | 1 ano | Histórico recente |
-| Texto de comentário excluído | `comments` | 30 dias, ou até encerrar uma denúncia aberta | Moderação |
+| Texto e imagem de comentário excluído | `comments` | 30 dias, ou até encerrar uma denúncia aberta | Moderação |
 | Denúncia encerrada e cópia do conteúdo | `reports` | 1 ano após o encerramento | Defesa e reincidência |
 | Auditoria administrativa | `audit_log` | 2 anos. O banco recusa menos de 1 ano | Responsabilização |
 | Registro de acesso | `access_records` | 183 dias. O banco recusa menos de 180 | Marco Civil |
@@ -39,6 +39,8 @@ Os prazos ficam em `readowl.retention.*`. A tarefa diária `RetentionTasks` apli
 | Backups | Fora do banco | 7 dias | Recuperação. Contêm tudo o que estava no banco, inclusive contas já excluídas |
 | Obras, revisões publicadas e comentários | Várias | Enquanto a conta existir | Serviço |
 | Foto de perfil | Armazenamento S3 | Até a pessoa trocar ou excluir a conta | Perfil público. Refeita sem metadados |
+| Capa e banner da obra | Armazenamento S3 | Até a pessoa trocar ou excluir a obra | Obra pública. Refeitos sem metadados |
+| Endereço da imagem de um comentário | `comments.image_url` | Enquanto o comentário existir, ou 30 dias depois de excluído | Comentário público |
 | Endereço da foto do Google ou hospedada | `users.avatar_url` | Até a pessoa trocar, remover ou excluir a conta | Perfil público |
 | Links externos | `user_links` | Até a pessoa trocar ou excluir a conta | Perfil público |
 
@@ -52,9 +54,9 @@ Os prazos ficam em `readowl.retention.*`. A tarefa diária `RetentionTasks` apli
 | Vínculo com Google, tokens, navegadores, sessões | Apagados |
 | Foto de perfil e links externos | Apagados. A foto sai do armazenamento depois do commit. Se isso falhar, o log registra a chave, e o arquivo precisa ser apagado à mão |
 | Biblioteca, progresso, notas, reações, curtidas, notificações | Apagados |
-| Obras, capítulos, rascunhos e revisões da pessoa | Apagados, junto com os comentários de terceiros nessas obras |
+| Obras, capítulos, rascunhos e revisões da pessoa | Apagados, junto com os comentários de terceiros nessas obras. Capas e banners saem do armazenamento depois do commit |
 | Obra sob denúncia aberta | Fica fora do ar até a denúncia ser encerrada, e então é apagada |
-| Comentários da pessoa | Continuam, com o texto e com o autor "Usuário removido" |
+| Comentários da pessoa | Continuam, com o texto, a imagem e o autor "Usuário removido" |
 | Denúncias feitas ou recebidas | Continuam até o prazo, ligadas à linha anonimizada |
 | Auditoria e registro de acesso | Continuam até o prazo, com o ID da linha anonimizada e, no registro de acesso, o IP |
 | Backups | Saem conforme o prazo: uma restauração feita nesse intervalo traz a conta de volta. **Depois de restaurar um backup, é preciso repetir as exclusões feitas depois dele. Ainda não há procedimento automatizado para isso** |

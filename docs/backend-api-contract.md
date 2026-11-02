@@ -381,13 +381,22 @@ Dados da própria conta. Exige sessão.
 
 ### Imagens externas
 
-Capas e banners ficam em outros sites, e só valem os domínios de `GET /image-hosts`, que devolve a lista atual. Público. A comparação é exata: um subdomínio de um site permitido não vale. **200**:
+Imagens por link só valem nos domínios de `GET /image-hosts`, que devolve a lista atual. Público. A comparação é exata: um subdomínio de um site permitido não vale. **200**:
 
 ```json
 ["i.ibb.co", "i.imgur.com", "res.cloudinary.com"]
 ```
 
-A foto de perfil é a única imagem que também pode ser enviada como arquivo. Ela pode vir de três lugares: de um arquivo, de um site permitido ou do login com Google. A conta nova usa a foto do Google, que acompanha as mudanças feitas lá. Uma foto escolhida pela pessoa vale mais, e uma foto removida não volta no login seguinte.
+Cada tipo de imagem é guardado de um jeito:
+
+| Imagem | De onde vem | Como fica guardada |
+|---|---|---|
+| Foto de perfil | Arquivo, link ou foto do Google | Arquivo: cópia no armazenamento. Link e Google: só o endereço |
+| Capa e banner da obra | Arquivo ou link | Sempre uma cópia no armazenamento: o servidor baixa o link |
+| Banner da página inicial | Arquivo ou link | Sempre uma cópia no armazenamento: o servidor baixa o link |
+| Imagem de capítulo e de comentário | Só link | Só o endereço: o servidor nunca baixa |
+
+A conta nova usa a foto do Google, que acompanha as mudanças feitas lá. Uma foto escolhida pela pessoa vale mais, e uma foto removida não volta no login seguinte.
 
 ### `PUT /users/me/avatar`
 
@@ -636,7 +645,6 @@ Vale o mesmo para capítulos: o slug segue o título. Títulos repetidos dentro 
 | `acronym` | De 2 a 10 letras ou números, sem acentos ou espaços. É salva em maiúsculas |
 | `synopsis` | Até 2000 caracteres, não vazia |
 | `releaseFrequency` | Opcional, até 50 caracteres |
-| `coverUrl` | Opcional, até 1000 caracteres. Endereço `https` de uma imagem em um dos [sites permitidos](#imagens-externas). Em branco na edição, remove a capa. **400** `INVALID_COVER_URL` fora disso |
 | `contentRating` | `GENERAL`, o padrão, ou `ADULT`. Com o gênero `Adulto`, a obra fica sempre `ADULT`. Obras adultas não aparecem para visitantes nem no sitemap, e respondem 404 sem sessão |
 | `genreIds` | De 1 a 5 gêneros de `GET /genres` |
 | `tags` | Opcional, até 10 nomes com letras, números, espaços, `_` ou `-`. Tags novas são criadas; maiúsculas não geram duplicatas |
@@ -696,6 +704,50 @@ Aceita os campos de `POST /books` e `status`. Campos ausentes não mudam. `relea
 | 400 | `TITLE_CONFIRMATION_MISMATCH` | O título não confere |
 | 409 | `BOOK_PUBLISHED` | Despublique a obra antes |
 | 409 | `BOOK_UNDER_MODERATION` | A obra ou um de seus capítulos está oculto pela moderação. Vale também para administradores |
+
+### Capa e banner da obra
+
+| Endpoint | O que faz |
+|---|---|
+| `PUT /books/{id}/cover` | Define a capa |
+| `DELETE /books/{id}/cover` | Remove a capa. **204**, mesmo sem capa |
+| `PUT /books/{id}/banner` | Define o banner |
+| `DELETE /books/{id}/banner` | Remove o banner. **204**, mesmo sem banner |
+
+Valem para quem pode editar a obra. O `PUT` aceita duas formas, e o resultado é o mesmo: **uma cópia no armazenamento**, que continua no ar mesmo que a imagem saia do site de origem.
+
+**Arquivo:** o corpo é a própria imagem, sem formulário, com `Content-Type: image/jpeg` ou `image/png`.
+
+**Link:** com `Content-Type: application/json`, em um dos [sites permitidos](#imagens-externas). O servidor baixa a imagem na hora, o que pode levar alguns segundos.
+
+```json
+{ "url": "https://i.imgur.com/capa.png" }
+```
+
+| Regra | Capa | Banner |
+|---|---|---|
+| Tamanho mínimo | 600x800 | 1200x400 |
+| Proporção, com 2% de tolerância | 3:4 | 3:1 |
+| Reduzida para caber em | 1200x1600 | 2400x800 |
+
+Vale para as duas: JPEG ou PNG, até 5 MiB e até 6000 pixels de largura ou altura. A imagem é refeita em JPEG, sem metadados, e transparência vira fundo branco. O limite é de 20 envios por hora por conta, somando capas e banners. Ao trocar uma imagem, o arquivo anterior é apagado.
+
+**200**, com o corpo de `GET /books/{id}/details`, que traz `coverUrl`, `bannerUrl` e a nova `version`. Use-a na próxima edição da obra. `bannerUrl` também aparece em `GET /books/{slug}` e é `null` sem banner.
+
+| Status | `code` | Quando |
+|---|---|---|
+| 400 | `INVALID_COVER_URL`, `INVALID_BANNER_URL` | O link não é `https://` completo ou está fora dos sites permitidos |
+| 400 | `IMAGE_DOWNLOAD_FAILED` | O site não entregou a imagem: endereço errado, fora do ar, lento demais ou redirecionando para outro lugar |
+| 400 | `INVALID_IMAGE` | O conteúdo não é um JPEG ou PNG válido, mesmo com o tipo certo |
+| 400 | `IMAGE_TOO_SMALL`, `IMAGE_WRONG_PROPORTION` | Fora das regras acima. A resposta traz `minWidth` e `minHeight` |
+| 400 | `IMAGE_TOO_LARGE` | Mais de 6000 pixels de largura ou altura |
+| 400 | `IMAGE_FILE_TOO_LARGE` | Mais de 5 MiB |
+| 404 | `BOOK_NOT_FOUND` | Inexistente ou de outra pessoa |
+| 415 | `UNSUPPORTED_MEDIA_TYPE` | Outro `Content-Type` |
+| 429 | `RATE_LIMITED` | Acima do limite |
+| 503 | `IMAGES_UNAVAILABLE` | Armazenamento não configurado ou fora do ar |
+
+**`coverUrl` deixou de ser aceito em `POST /books` e `PATCH /books/{id}`:** o campo é ignorado. Envie a capa depois de criar a obra. Capas e banners já salvos como link continuam valendo até serem trocados.
 
 ### `POST /books/{id}/publish` e `POST /books/{id}/unpublish`
 
@@ -962,6 +1014,7 @@ Limites por minuto, além dos quais a resposta é 429 `RATE_LIMITED`:
   "chapterId": null,
   "parentId": null,
   "content": "Gostei muito!\nQuando sai o próximo?",
+  "imageUrl": "https://i.imgur.com/arte.jpg",
   "author": { "username": "maria-leitora", "name": "Maria Leitora" },
   "removed": false,
   "edited": false,
@@ -974,17 +1027,17 @@ Limites por minuto, além dos quais a resposta é 429 `RATE_LIMITED`:
 
 `author.username` é `null` quando a conta foi excluída: mostre `author.name`, sem link para perfil.
 
-**Trate `content` e `author` como opcionais.** Um comentário principal excluído, oculto ou de conta suspensa que ainda tem respostas continua na lista com `removed: true`, `content: null` e `author: null`, para não sumir com a conversa. Mostre algo como "Comentário removido". Sem respostas visíveis, ele não aparece.
+**Trate `content` e `author` como opcionais.** Um comentário principal excluído, oculto ou de conta suspensa que ainda tem respostas continua na lista com `removed: true`, `content: null`, `imageUrl: null` e `author: null`, para não sumir com a conversa. Mostre algo como "Comentário removido". Sem respostas visíveis, ele não aparece.
 
 `POST /books/{bookId}/comments` e `POST /chapters/{chapterId}/comments` criam um comentário. **201**, com o corpo acima.
 
 ```json
-{ "content": "Gostei muito!" }
+{ "content": "Gostei muito!", "imageUrl": "https://i.imgur.com/arte.jpg" }
 ```
 
-`content` tem de 1 a 5000 caracteres, sem contar espaços nas pontas.
+`content` tem de 1 a 5000 caracteres, sem contar espaços nas pontas, e continua obrigatório com imagem. `imageUrl` é opcional: uma imagem por comentário, até 1000 caracteres, em um dos [sites permitidos](#imagens-externas). **400** `INVALID_COMMENT_IMAGE` fora disso. O servidor guarda só o endereço, então confira no navegador se a imagem carrega.
 
-`PATCH /comments/{id}`, com o mesmo corpo, altera o texto. **200**, com o corpo acima e `edited: true`. Quem comentou edita enquanto o conteúdo estiver no ar; `ADMIN` e `ROOT` editam sempre. **A resposta não indica quem editou:** isso fica em `GET /admin/audit-log`.
+`PATCH /comments/{id}`, com o mesmo corpo, altera o texto e a imagem. Sem `imageUrl`, a imagem não muda; em branco, é removida. **200**, com o corpo acima e `edited: true`. Quem comentou edita enquanto o conteúdo estiver no ar; `ADMIN` e `ROOT` editam sempre. **A resposta não indica quem editou:** isso fica em `GET /admin/audit-log`.
 
 `DELETE /comments/{id}` remove o comentário da página. **204**, sem corpo. Quem comentou pode excluir mesmo com o conteúdo fora do ar; `ADMIN` e `ROOT` também. O autor da obra não exclui comentários de terceiros. **O texto continua guardado no banco para a moderação.**
 
@@ -1094,7 +1147,7 @@ O servidor decide o que conta: uma visita por usuário e capítulo a cada 2 minu
 
 ### `GET /banners`
 
-Banners ativos da página inicial, por `position`. Público, sem paginação. Um banner é ativo se está ligado e dentro do período. **200**:
+Banners ativos da página inicial, por `position`. Público, sem paginação. Um banner é ativo se está ligado, dentro do período e com imagem. **200**:
 ```json
 [{
   "id": "019f...",
@@ -1107,7 +1160,7 @@ Banners ativos da página inicial, por `position`. Público, sem paginação. Um
 
 ### Administração
 
-Para `ADMIN` e `ROOT`. Até a etapa de mídia, as imagens são endereços externos.
+Para `ADMIN` e `ROOT`. A imagem tem rota própria: crie o banner e depois envie a imagem. Sem imagem, ele não aparece em `GET /banners`.
 
 | Endpoint | O que faz |
 |---|---|
@@ -1115,13 +1168,13 @@ Para `ADMIN` e `ROOT`. Até a etapa de mídia, as imagens são endereços extern
 | `GET /admin/banners/{id}` | Um banner |
 | `POST /admin/banners` | Cria. **201** |
 | `PUT /admin/banners/{id}` | Substitui todos os campos, com `version`. **200** |
-| `DELETE /admin/banners/{id}` | Exclui. **204** |
+| `PUT /admin/banners/{id}/image` | Define a imagem, por arquivo ou link, com as regras de [Capa e banner da obra](#capa-e-banner-da-obra): mínimo de 1200x400 e proporção de 3:1. **200**, com o banner e a nova `version` |
+| `DELETE /admin/banners/{id}` | Exclui, e o arquivo sai do armazenamento. **204** |
 
 ```json
 {
   "version": 0,
   "name": "Novidades de outubro",
-  "imageUrl": "https://cdn.example.com/outubro.png",
   "linkUrl": "https://readowl.example.com/obras/sra-shihais",
   "position": 1,
   "enabled": true,
@@ -1134,7 +1187,7 @@ Para `ADMIN` e `ROOT`. Até a etapa de mídia, as imagens são endereços extern
 |---|---|
 | `version` | Só em `PUT`: a versão lida |
 | `name` | Até 200 caracteres, não vazio |
-| `imageUrl`, `linkUrl` | Até 1000 caracteres, sempre `https://` com o endereço completo |
+| `linkUrl` | Até 1000 caracteres, sempre `https://` com o endereço completo |
 | `position` | A partir de 0. Pode repetir |
 | `enabled` | Obrigatório |
 | `activeFrom`, `activeUntil` | Opcionais. Sem um deles, o período fica em aberto naquele lado |
@@ -1158,9 +1211,11 @@ Para `ADMIN` e `ROOT`. Até a etapa de mídia, as imagens são endereços extern
 
 | Status | `code` | Quando |
 |---|---|---|
-| 400 | `INVALID_BANNER_URL` | O endereço não é `https://` completo |
+| 400 | `INVALID_BANNER_URL` | O link não é `https://` completo, ou a imagem está fora dos [sites permitidos](#imagens-externas) |
 | 400 | `INVALID_BANNER_PERIOD` | O fim não é depois do início |
+| 400 | `IMAGE_TOO_SMALL`, `IMAGE_WRONG_PROPORTION`, `IMAGE_TOO_LARGE`, `IMAGE_FILE_TOO_LARGE`, `INVALID_IMAGE`, `IMAGE_DOWNLOAD_FAILED` | Na imagem. Veja [Capa e banner da obra](#capa-e-banner-da-obra) |
 | 404 | `BANNER_NOT_FOUND` | Inexistente |
+| 503 | `IMAGES_UNAVAILABLE` | Armazenamento não configurado ou fora do ar |
 | 409 | `BANNER_CONFLICT` | Outra pessoa alterou o banner. A resposta traz `currentVersion` |
 
 ## Notificações
@@ -1306,7 +1361,7 @@ Encerra a denúncia. `note` é opcional, até 1000 caracteres. **200**, com o co
 | `POST /moderation/comments/{id}/hide` | Oculta o comentário. A pessoa não consegue editar nem excluir |
 | `POST /moderation/books/{id}/restore`, `POST /moderation/chapters/{id}/restore` e `POST /moderation/comments/{id}/restore` | Desfaz a ocultação |
 
-`POST /moderation/books/{id}/remove-cover` e `POST /moderation/users/{id}/remove-avatar` retiram só a imagem imprópria, sem tirar o resto do ar. Respondem 409 `NO_COVER` ou `NO_AVATAR` se não houver imagem.
+`POST /moderation/books/{id}/remove-cover`, `POST /moderation/books/{id}/remove-banner` e `POST /moderation/users/{id}/remove-avatar` retiram só a imagem imprópria, sem tirar o resto do ar, e o arquivo sai do armazenamento. Respondem 409 `NO_COVER`, `NO_BOOK_BANNER` ou `NO_AVATAR` se não houver imagem.
 
 Todas exigem o motivo, de até 500 caracteres, que fica na auditoria. **Quem escreveu o conteúdo recebe esse motivo** em uma notificação, então escreva para a pessoa ler. **204**, sem corpo.
 
@@ -1438,14 +1493,16 @@ Salvamento automático. Envie a `version` que você leu.
 
 | Tipo | Elementos |
 |---|---|
-| Blocos | `paragraph`, `heading` (`level` 2 ou 3), `blockquote`, `bulletList`, `orderedList` (`start`), `listItem`, `horizontalRule` |
+| Blocos | `paragraph`, `heading` (`level` 2 ou 3), `blockquote`, `bulletList`, `orderedList` (`start`), `listItem`, `horizontalRule`, `image` (`src`, `alt`, `title`) |
 | Em linha | `text`, `hardBreak` |
 | Marcas | `bold`, `italic`, `underline`, `strike` |
 | Alinhamento | `textAlign` em `paragraph` e `heading`: `left`, `center`, `right` ou `justify` |
 
-**Links e imagens não são aceitos nesta versão.** O limite é de 2 MiB de JSON, 500 mil caracteres de texto e 20 níveis de aninhamento.
+**Links não são aceitos nesta versão.** O limite é de 2 MiB de JSON, 500 mil caracteres de texto, 200 imagens e 20 níveis de aninhamento.
 
-O HTML de leitura é gerado pelo servidor, com todo texto escapado. O alinhamento vira as classes `text-left`, `text-center`, `text-right` e `text-justify`, que o frontend precisa estilizar.
+`image` é um bloco, não fica dentro de um parágrafo. `src` é obrigatório e precisa estar em um dos [sites permitidos](#imagens-externas). `alt` e `title` são opcionais, com até 500 caracteres. O servidor guarda só o endereço e nunca baixa a imagem, então não há como enviar um arquivo para um capítulo. Um capítulo só com imagens pode ser publicado.
+
+O HTML de leitura é gerado pelo servidor, com todo texto escapado. O alinhamento vira as classes `text-left`, `text-center`, `text-right` e `text-justify`, que o frontend precisa estilizar. Cada imagem vira `<img src alt title loading="lazy" referrerpolicy="no-referrer">`.
 
 ### `POST /chapters/{id}/publish`
 
@@ -1659,17 +1716,17 @@ Nada disso foi alterado no projeto Angular.
 | SEO | No SSR: `title`, descrição e Open Graph por obra e capítulo, URL canônica e 301 em `BOOK_MOVED` e `CHAPTER_MOVED` |
 | Catálogo | Mostrar `averageRating`, ausente sem avaliações, e `ratingCount` nos cartões |
 | Notificações | Mostrar avisos da moderação, com `message` |
-| Imagens | Limitar `img-src` aos domínios de `GET /image-hosts`, mais o endereço do armazenamento de fotos |
-| Capas | Conferir no navegador o mínimo de 600x800 e a proporção de 3:4, com 2% de tolerância, antes de salvar `coverUrl`. O servidor não baixa a imagem. Mostrar uma capa padrão se ela não carregar, e usar `referrerpolicy="no-referrer"`, porque alguns sites bloqueiam imagens abertas de outros domínios |
+| Imagens | Limitar `img-src` aos domínios de `GET /image-hosts`, mais o endereço do armazenamento de imagens |
+| Capas e banners | Recortar no navegador antes de enviar: 3:4 e no mínimo 600x800 na capa, 3:1 e no mínimo 1200x400 nos banners. Só JPEG e PNG são aceitos, então um link em WebP ou GIF é recusado com `INVALID_IMAGE`: nesse caso, peça o arquivo |
 | Foto de perfil | Recortar e reduzir no navegador para no máximo 300x300 antes de enviar |
 | Links do autor | Abrir com `rel="nofollow noopener ugc"`, porque são informados por usuários |
 | Obras adultas | Oferecer `contentRating` ao criar e editar a obra. O SSR não envia cookies, então uma obra adulta responde 404 no servidor e só aparece no navegador, com sessão |
-| Imagens | Tratar obra e perfil sem capa ou avatar até a etapa de mídia |
+| Imagens | Tratar obra e perfil sem capa, banner ou avatar. Mostrar uma imagem padrão se um link externo não carregar, e usar `referrerpolicy="no-referrer"`, porque alguns sites recusam imagens abertas a partir de outro site |
 | Editor | Adotar o Tiptap com as extensões da [lista do formato](#formato-do-documento-versão-1). Ele ainda não está no `package.json` |
 | Leitura | Estilizar as classes `text-left`, `text-center`, `text-right` e `text-justify` |
 | Comentários | Exibir como texto, sem `innerHTML`, preservando as quebras de linha. Tratar `removed: true`, sem texto nem autor |
 | Curtidas | Depois de carregar uma lista, consultar `GET /users/me/liked-comments`, só com o usuário logado |
-| Banners | Os endereços vêm de administradores e são externos: considerar a política de imagens do site |
+| Banners | Na administração, `imageUrl` é `null` até o envio da imagem, e o banner só aparece na página inicial depois disso |
 | Visitas | Chamar `POST /chapters/{id}/views` no navegador ao abrir um capítulo, só com o usuário logado |
 | Notificações | Consultar `GET /notifications/unread-count` periodicamente, só com o usuário logado |
 | E-mail de capítulo novo | Ter a página `/obras/{slug da obra}/capitulos/{slug do capítulo}` e a opção `emailNewChapters` em `/conta` |
@@ -1678,9 +1735,3 @@ Nada disso foi alterado no projeto Angular.
 
 - O README cita Angular 22 e Node 24 LTS; o `package.json` usa Angular 21.2 e o Node local é o 26.
 - **Se o editor não for o Tiptap, o formato de conteúdo muda.** Avise antes de haver capítulos reais, porque os documentos salvos dependem dele.
-
-## Planejado (ainda não implementado)
-
-Estes grupos ainda não existem e seus caminhos podem mudar:
-
-- **Mídia:** upload de imagens de capa, avatar e banner. Depende de aprovação para adicionar o armazenamento S3.

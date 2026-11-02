@@ -3,16 +3,14 @@ package br.com.readowl.readowl.user.application;
 import br.com.readowl.readowl.media.application.AvatarImages;
 import br.com.readowl.readowl.media.application.ExternalImages;
 import br.com.readowl.readowl.media.application.ObjectStorage;
+import br.com.readowl.readowl.media.application.StoredImages;
 import br.com.readowl.readowl.shared.config.ReadowlProperties;
 import br.com.readowl.readowl.shared.exception.ApiException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.ObjectProvider;
-import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
-import org.springframework.transaction.event.TransactionPhase;
-import org.springframework.transaction.event.TransactionalEventListener;
 import org.springframework.transaction.support.TransactionOperations;
 
 import java.util.UUID;
@@ -30,21 +28,18 @@ public class AvatarService {
     private final UserService users;
     private final ObjectProvider<ObjectStorage> storage;
     private final ReadowlProperties properties;
-    private final ApplicationEventPublisher events;
+    private final StoredImages files;
     private final TransactionOperations transaction;
     private final ExternalImages images;
 
     AvatarService(UserService users, ObjectProvider<ObjectStorage> storage, ReadowlProperties properties,
-                  ApplicationEventPublisher events, TransactionOperations transaction, ExternalImages images) {
+                  StoredImages files, TransactionOperations transaction, ExternalImages images) {
         this.images = images;
         this.users = users;
         this.storage = storage;
         this.properties = properties;
-        this.events = events;
+        this.files = files;
         this.transaction = transaction;
-    }
-
-    record AvatarFileReleased(String key) {
     }
 
     public record AvatarResponse(String avatarUrl) {
@@ -65,9 +60,9 @@ public class AvatarService {
         }
         String url = properties.storage().publicUrl().replaceAll("/+$", "") + "/" + key;
         try {
-            transaction.executeWithoutResult(status -> release(users.changeAvatar(userId, key, url)));
+            transaction.executeWithoutResult(status -> files.release(users.changeAvatar(userId, key, url)));
         } catch (RuntimeException ex) {
-            events.publishEvent(new AvatarFileReleased(key));
+            files.release(key);
             throw ex;
         }
         return new AvatarResponse(url);
@@ -83,7 +78,7 @@ public class AvatarService {
         if (!images.isAllowed(cleaned)) {
             throw ApiException.badRequest("INVALID_AVATAR_URL", "Use o endereço completo da imagem, com https://, em um dos sites permitidos.");
         }
-        release(users.changeAvatar(userId, null, cleaned));
+        files.release(users.changeAvatar(userId, null, cleaned));
         return new AvatarResponse(cleaned);
     }
 
@@ -95,27 +90,7 @@ public class AvatarService {
     @Transactional
     public boolean remove(UUID userId) {
         boolean hadPicture = users.requireById(userId).getAvatarUrl() != null;
-        release(users.changeAvatar(userId, null, null));
+        files.release(users.changeAvatar(userId, null, null));
         return hadPicture;
-    }
-
-    private void release(String key) {
-        if (key != null) {
-            events.publishEvent(new AvatarFileReleased(key));
-        }
-    }
-
-    @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT, fallbackExecution = true)
-    void deleteReleasedFile(AvatarFileReleased released) {
-        ObjectStorage objects = storage.getIfAvailable();
-        if (objects == null) {
-            log.warn("Foto sem armazenamento para apagar: chave={}", released.key());
-            return;
-        }
-        try {
-            objects.delete(released.key());
-        } catch (RuntimeException ex) {
-            log.error("Foto nao apagada, sobrou um arquivo sem uso: chave={}, causa={}", released.key(), ex.getClass().getSimpleName());
-        }
     }
 }

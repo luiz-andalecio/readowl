@@ -238,7 +238,7 @@ Monólito modular por domínio, em `br.com.readowl.readowl`. Cada módulo tem as
 | `media` | Validação de imagens e armazenamento de objetos |
 | `banner` | Banners |
 
-As dependências seguem uma direção, sem ciclos: `publishing` e `library` conhecem `book`; `book` conhece `user` e `genre`; `community` conhece `publishing`, `book` e `user`; `notification` conhece `publishing`; `moderation` conhece `community`, `publishing`, `book` e `user`. A gravação da auditoria fica em `shared`, porque vários módulos a usam. A publicação avisa `notification` por evento, sem conhecê-la. `privacy` fica acima de todos, porque a exclusão de uma conta atravessa todos os dados.
+As dependências seguem uma direção, sem ciclos: `publishing` e `library` conhecem `book`; `book` conhece `user` e `genre`; `community` conhece `publishing`, `book` e `user`; `notification` conhece `publishing`; `moderation` conhece `community`, `publishing`, `book` e `user`. `media` não conhece nenhum módulo de domínio, e os que usam imagens a conhecem. A gravação da auditoria fica em `shared`, porque vários módulos a usam. A publicação avisa `notification` por evento, sem conhecê-la. `privacy` fica acima de todos, porque a exclusão de uma conta atravessa todos os dados.
 
 ### Persistência
 
@@ -269,10 +269,12 @@ As dependências seguem uma direção, sem ciclos: `publishing` e `library` conh
 
 ### Imagens e links
 
-- **Capas e banners:** ficam em outros sites, nos domínios de `readowl.images.allowed-hosts`, e guardamos só o endereço `https`. O servidor nunca os acessa, para não poder ser usado contra a rede interna, então tamanho e proporção são conferidos pelo frontend. Se o site de origem sair do ar, a imagem some.
+- **Capa e banner da obra, e banner da página inicial:** arquivo ou link, sempre com uma cópia no armazenamento (`StoredImages`). Ficam fora da transação, com a permissão conferida antes e de novo ao salvar. Tamanho e proporção estão em `StoredImageType`. Sem chave no banco, a imagem é um link salvo antes dessa mudança, que vale até ser trocado.
+- **Download de links:** `HttpRemoteImages` só acessa https, na porta 443, nos domínios de `readowl.images.allowed-hosts`, recusa domínios que apontam para a rede interna (`ImageDestinations`) e confere cada redirecionamento. Tem limite de tempo e de tamanho, e o log registra só o domínio.
+- **Imagem de capítulo e de comentário:** só o endereço, em um domínio permitido. O servidor nunca as baixa.
 - **Foto do login:** a conta nova usa a foto do Google, se vier de um domínio permitido, e ela acompanha as mudanças feitas lá (`avatar_from_login`). Uma foto escolhida pela pessoa, enviada ou hospedada em um site permitido, vale mais, e uma foto removida não volta.
 - **Foto de perfil:** corpo binário em `PUT /users/me/avatar`, até 2 MiB e 300x300 pixels. O formato vem dos bytes, e a imagem é refeita em JPEG, sem metadados. O arquivo anterior só sai depois do commit, e a exclusão da conta apaga o arquivo atual.
-- **Moderação:** remove só a capa ou só a foto, sem tirar o resto do ar.
+- **Moderação:** remove só a capa, só o banner ou só a foto, sem tirar o resto do ar.
 - **Links do autor:** até 10, com o domínio conferido pelo tipo (`ExternalLinkType`). `WEBSITE` aceita qualquer domínio.
 
 ### Leitura e busca

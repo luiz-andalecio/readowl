@@ -6,6 +6,7 @@ import br.com.readowl.readowl.community.domain.Comment;
 import br.com.readowl.readowl.community.infrastructure.CommentLikeRepository;
 import br.com.readowl.readowl.community.infrastructure.CommentRepository;
 import br.com.readowl.readowl.community.infrastructure.CommentRepository.CommentCount;
+import br.com.readowl.readowl.media.application.ExternalImages;
 import br.com.readowl.readowl.publishing.application.PublicChapters;
 import br.com.readowl.readowl.publishing.domain.Chapter;
 import br.com.readowl.readowl.shared.api.PageResponse;
@@ -14,6 +15,7 @@ import br.com.readowl.readowl.shared.audit.AuditTrail;
 import br.com.readowl.readowl.shared.exception.ApiException;
 import br.com.readowl.readowl.shared.ratelimit.RateLimitPolicy;
 import br.com.readowl.readowl.shared.ratelimit.RateLimiter;
+import br.com.readowl.readowl.shared.text.Texts;
 import br.com.readowl.readowl.user.application.SessionUser;
 import br.com.readowl.readowl.user.application.UserService;
 import br.com.readowl.readowl.user.domain.User;
@@ -27,12 +29,14 @@ import java.time.Duration;
 import java.time.Instant;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.UUID;
 import java.util.stream.Collectors;
 
 /**
- * Comentários são texto puro: o cliente deve exibi-los como texto, sem interpretar HTML. Os limites ficam
- * fora da transação, para que a tentativa conte mesmo quando a operação falha.
+ * Comentários são texto puro: o cliente deve exibi-los como texto, sem interpretar HTML. Cada um pode ter uma imagem de um
+ * site permitido, da qual guardamos só o endereço. Os limites ficam fora da transação, para que a tentativa conte mesmo
+ * quando a operação falha.
  */
 @Service
 public class CommentService {
@@ -47,10 +51,12 @@ public class CommentService {
     private final RateLimiter rateLimiter;
     private final TransactionOperations transaction;
     private final AuditTrail audit;
+    private final ExternalImages images;
 
     CommentService(CommentRepository comments, CommentLikeRepository likes, PublicBooks publicBooks,
                    PublicChapters publicChapters, UserService users, RateLimiter rateLimiter,
-                   TransactionOperations transaction, AuditTrail audit) {
+                   TransactionOperations transaction, AuditTrail audit, ExternalImages images) {
+        this.images = images;
         this.comments = comments;
         this.likes = likes;
         this.publicBooks = publicBooks;
@@ -70,7 +76,7 @@ public class CommentService {
     /**
      * @param removed comentário principal excluído ou oculto que ainda tem respostas: sem texto nem autor
      */
-    public record CommentResponse(UUID id, UUID bookId, UUID chapterId, UUID parentId, String content,
+    public record CommentResponse(UUID id, UUID bookId, UUID chapterId, UUID parentId, String content, String imageUrl,
                                   CommentAuthor author, boolean removed, boolean edited, long replyCount,
                                   long likeCount, Instant createdAt, Instant updatedAt) {
 
@@ -81,6 +87,7 @@ public class CommentService {
                     comment.getChapter() == null ? null : comment.getChapter().getId(),
                     comment.getParent() == null ? null : comment.getParent().getId(),
                     removed ? null : comment.getContent(),
+                    removed ? null : comment.getImageUrl(),
                     removed ? null : new CommentAuthor(author.isDeleted() ? null : author.getUsername(), author.getName(), author.getAvatarUrl()), removed,
                     !removed && comment.getEditedAt() != null, replyCount, removed ? 0 : likeCount,
                     comment.getCreatedAt(), comment.getUpdatedAt());
@@ -108,26 +115,29 @@ public class CommentService {
         return withCounts(comments.findVisibleReplies(parentId, pageable));
     }
 
-    public CommentResponse commentOnBook(UUID bookId, String content, SessionUser principal, String clientIp) {
+    public CommentResponse commentOnBook(UUID bookId, String content, String imageUrl, SessionUser principal, String clientIp) {
         String text = clean(content);
+        String image = image(imageUrl);
         acquire(principal, clientIp);
-        return transaction.execute(status -> create(publicBooks.requireById(bookId), null, null, text, principal));
+        return transaction.execute(status -> create(publicBooks.requireById(bookId), null, null, text, image, principal));
     }
 
-    public CommentResponse commentOnChapter(UUID chapterId, String content, SessionUser principal, String clientIp) {
+    public CommentResponse commentOnChapter(UUID chapterId, String content, String imageUrl, SessionUser principal, String clientIp) {
         String text = clean(content);
+        String image = image(imageUrl);
         acquire(principal, clientIp);
         return transaction.execute(status -> {
             Chapter chapter = publicChapters.requirePublic(chapterId);
-            return create(chapter.getBook(), chapter, null, text, principal);
+            return create(chapter.getBook(), chapter, null, text, image, principal);
         });
     }
 
     /**
      * As respostas têm um nível só: a obra e o capítulo vêm do comentário respondido, nunca do cliente.
      */
-    public CommentResponse reply(UUID parentId, String content, SessionUser principal, String clientIp) {
+    public CommentResponse reply(UUID parentId, String content, String imageUrl, SessionUser principal, String clientIp) {
         String text = clean(content);
+        String image = image(imageUrl);
         acquire(principal, clientIp);
         return transaction.execute(status -> {
             Comment parent = comments.findNotDeleted(parentId).filter(CommentService::isVisible)
@@ -135,15 +145,17 @@ public class CommentService {
             if (parent.getParent() != null) {
                 throw ApiException.badRequest("NESTED_REPLY", "Responda ao comentário principal.");
             }
-            return create(parent.getBook(), parent.getChapter(), parent, text, principal);
+            return create(parent.getBook(), parent.getChapter(), parent, text, image, principal);
         });
     }
 
     /**
-     * Quem comentou só edita enquanto o conteúdo estiver no ar. A administração tem acesso total.
+     * Quem comentou só edita enquanto o conteúdo estiver no ar. A administração tem acesso total. Sem imageUrl, a imagem não
+     * muda. Em branco, é removida.
      */
-    public CommentResponse edit(UUID commentId, String content, SessionUser principal, String clientIp) {
+    public CommentResponse edit(UUID commentId, String content, String imageUrl, SessionUser principal, String clientIp) {
         String text = clean(content);
+        String image = image(imageUrl);
         acquire(principal, clientIp);
         return transaction.execute(status -> {
             Comment comment = comments.findNotDeleted(commentId).orElseThrow(CommentService::notFound);
@@ -151,11 +163,14 @@ public class CommentService {
                 requireVisible(comment);
                 requireOwner(comment, principal);
             }
-            if (!isOwner(comment, principal) && !text.equals(comment.getContent())) {
+            String newImage = imageUrl == null ? comment.getImageUrl() : image;
+            if (!isOwner(comment, principal) && (!text.equals(comment.getContent()) || !Objects.equals(newImage, comment.getImageUrl()))) {
                 audit.record(principal.id(), "COMMENT_EDITED", "comments/" + commentId,
-                        Map.of("before", comment.getContent(), "after", text));
+                        Map.of("before", comment.getContent(), "after", text,
+                                "imageBefore", Objects.requireNonNullElse(comment.getImageUrl(), ""),
+                                "imageAfter", Objects.requireNonNullElse(newImage, "")));
             }
-            comment.edit(text, Instant.now());
+            comment.edit(text, newImage, Instant.now());
             List<UUID> ids = List.of(comments.saveAndFlush(comment).getId());
             return CommentResponse.from(comment, replyCounts(ids).getOrDefault(comment.getId(), 0L),
                     likeCounts(ids).getOrDefault(comment.getId(), 0L));
@@ -179,13 +194,13 @@ public class CommentService {
         });
     }
 
-    private CommentResponse create(Book book, Chapter chapter, Comment parent, String text, SessionUser principal) {
+    private CommentResponse create(Book book, Chapter chapter, Comment parent, String text, String image, SessionUser principal) {
         comments.lockCommentsOf(principal.id());
         if (isDuplicate(book, chapter, parent, text, principal)) {
             throw ApiException.conflict("DUPLICATE_COMMENT", "Você acabou de enviar este mesmo comentário.");
         }
         User author = users.requireById(principal.id());
-        return CommentResponse.from(comments.saveAndFlush(new Comment(text, author, book, chapter, parent)), 0, 0);
+        return CommentResponse.from(comments.saveAndFlush(new Comment(text, image, author, book, chapter, parent)), 0, 0);
     }
 
     private boolean isDuplicate(Book book, Chapter chapter, Comment parent, String text, SessionUser principal) {
@@ -232,6 +247,14 @@ public class CommentService {
             throw ApiException.badRequest("INVALID_COMMENT", "O comentário tem caracteres não permitidos.");
         }
         return text;
+    }
+
+    private String image(String url) {
+        String image = Texts.blankToNull(url);
+        if (image != null && !images.isAllowed(image)) {
+            throw ApiException.badRequest("INVALID_COMMENT_IMAGE", "Use o endereço completo da imagem, com https://, em um dos sites permitidos.");
+        }
+        return image;
     }
 
     private static boolean canOverride(Comment comment, SessionUser principal) {

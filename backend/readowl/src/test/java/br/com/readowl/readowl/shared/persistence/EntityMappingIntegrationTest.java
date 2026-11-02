@@ -60,7 +60,7 @@ class EntityMappingIntegrationTest {
         User author = newUser();
         User reader = newUser();
         Book book = newBook(author);
-        Comment comment = persist(new Comment("Muito bom", reader, book, null, null));
+        Comment comment = persist(new Comment("Muito bom", null, reader, book, null, null));
 
         persist(new BookFollow(reader, book));
         persist(new BookRating(reader, book, 5));
@@ -80,8 +80,8 @@ class EntityMappingIntegrationTest {
         User author = newUser();
         Book book = newBook(author);
         Chapter chapter = persist(new Chapter(book, null, "Um", "um", 1));
-        Comment parent = persist(new Comment("Pergunta", author, book, chapter, null));
-        Comment reply = persist(new Comment("Resposta", author, book, chapter, parent));
+        Comment parent = persist(new Comment("Pergunta", null, author, book, chapter, null));
+        Comment reply = persist(new Comment("Resposta", null, author, book, chapter, parent));
 
         transaction.executeWithoutResult(status -> {
             Comment loaded = entityManager.find(Comment.class, reply.getId());

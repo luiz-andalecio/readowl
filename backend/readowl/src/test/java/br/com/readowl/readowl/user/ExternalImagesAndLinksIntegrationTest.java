@@ -302,41 +302,6 @@ class ExternalImagesAndLinksIntegrationTest {
     }
 
     @Test
-    void aBookShowsTheCoverEverywhere() {
-        Map<String, Object> data = new LinkedHashMap<>(books.newBook("Obra com capa", BookFixtures.uniqueAcronym()));
-        data.put("coverUrl", COVER);
-        String book = books.publishedBook(person, data);
-        String slug = person.get("/api/v1/books/" + book + "/details").json().at("/slug").asString();
-
-        assertThat(person.get("/api/v1/books/" + book + "/details").json().at("/coverUrl").asString()).isEqualTo(COVER);
-        assertThat(visitor.get("/api/v1/books/" + slug).json().at("/coverUrl").asString()).isEqualTo(COVER);
-        assertThat(visitor.get("/api/v1/books?author=" + username()).json().at("/content/0/coverUrl").asString()).isEqualTo(COVER);
-        assertThat(person.get("/api/v1/users/me/books").json().at("/content/0/coverUrl").asString()).isEqualTo(COVER);
-        assertThat(visitor.get("/api/v1/books/" + slug + "/chapters/capitulo-1").json().at("/book/coverUrl").asString()).isEqualTo(COVER);
-    }
-
-    @Test
-    void aCoverCanBeChangedAndRemoved() {
-        String book = books.createBook(person);
-        String path = "/api/v1/books/" + book;
-
-        assertThat(person.patch(path, body("coverUrl", COVER)).json().at("/coverUrl").asString()).isEqualTo(COVER);
-        assertThat(person.patch(path, body("synopsis", "Outra")).json().at("/coverUrl").asString()).isEqualTo(COVER);
-        assertThat(person.patch(path, body("coverUrl", " ")).json().at("/coverUrl").isNull()).isTrue();
-    }
-
-    @ParameterizedTest
-    @ValueSource(strings = {"https://site-desconhecido.example.com/a.jpg", "https://i.imgur.com.golpe.example.com/a.jpg",
-            "https://outro.i.imgur.com/a.jpg", "http://i.imgur.com/a.jpg", "javascript:alert(1)", "data:image/png;base64,AAAA", "imgur.com/a.jpg",
-            "https://user:senha@imgur.com/a.jpg", "https://127.0.0.1/a.jpg", "https://[::1]/a.jpg"})
-    void aCoverOutsideHttpsOrPointingToAnAddressIsRefused(String url) {
-        ApiClient.Response refused = person.patch("/api/v1/books/" + books.createBook(person), body("coverUrl", url));
-
-        assertThat(refused.status()).isEqualTo(400);
-        assertThat(refused.code()).isEqualTo("INVALID_COVER_URL");
-    }
-
-    @Test
     void theAllowedSitesArePublic() {
         assertThat(visitor.get("/api/v1/image-hosts").json().toString()).contains("i.imgur.com").contains("i.ibb.co")
                 .contains("res.cloudinary.com").doesNotContain("example.com");
@@ -352,25 +317,6 @@ class ExternalImagesAndLinksIntegrationTest {
         assertThat(paused.at("/totalElements").asLong()).isOne();
         assertThat(paused.at("/content/0/status").asString()).isEqualTo("PAUSED");
         assertThat(visitor.get("/api/v1/books?author=" + username() + "&status=HIATUS").json().at("/totalElements").asLong()).isZero();
-    }
-
-    @Test
-    void moderationRemovesOnlyTheCover() {
-        Map<String, Object> data = new LinkedHashMap<>(books.newBook("Capa imprópria", BookFixtures.uniqueAcronym()));
-        data.put("coverUrl", COVER);
-        String book = books.publishedBook(person, data);
-        String moderatorEmail = uniqueEmail();
-        accounts.registerVerified(moderatorEmail);
-        jdbc.update("UPDATE users SET role = 'MODERATOR' WHERE email = ?", moderatorEmail);
-        ApiClient moderator = accounts.loggedIn(moderatorEmail, PASSWORD);
-        String remove = "/api/v1/moderation/books/" + book + "/remove-cover";
-
-        assertThat(moderator.post(remove, body("reason", "Imagem imprópria")).status()).isEqualTo(204);
-
-        JsonNode details = person.get("/api/v1/books/" + book + "/details").json();
-        assertThat(details.at("/coverUrl").isNull()).isTrue();
-        assertThat(details.at("/publicationState").asString()).isEqualTo("PUBLISHED");
-        assertThat(moderator.post(remove, body("reason", "De novo")).code()).isEqualTo("NO_COVER");
     }
 
     @Test
