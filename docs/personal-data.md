@@ -12,7 +12,8 @@ Para quem opera o Readowl e para a revisão jurídica. Descreve o que o sistema 
 4. **Texto de comentários após a exclusão da conta.** O texto continua publicado sem o autor. Confirmar se a anonimização basta, porque o texto pode identificar a pessoa.
 5. **Auditoria por 2 anos e cópias em denúncias.** Confirmar os prazos e a base legal para mantê-los depois da exclusão da conta.
 6. **Direito autoral.** As obras saem com a conta. Conferir se os termos precisam tratar disso.
-7. **Bases legais, encarregado, transferência internacional** (e-mails, Google, provedor) e o canal de solicitações da LGPD ainda não foram definidos.
+7. **Imagens em outros sites.** Capas e banners abrem direto de sites como Imgur e ImgBB, que recebem o IP de quem lÃª. Confirmar se a polÃ­tica de privacidade precisa informar isso.
+8. **Bases legais, encarregado, transferência internacional** (e-mails, Google, provedor) e o canal de solicitações da LGPD ainda não foram definidos.
 
 ## O que é guardado e por quanto tempo
 
