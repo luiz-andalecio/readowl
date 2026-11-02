@@ -28,7 +28,7 @@ O site fica em `https://localhost:8443`, com certificado autoassinado, e os e-ma
 
 ### Armazenamento de fotos
 
-Crie um bucket compatível com S3, com leitura pública das fotos, e preencha as variáveis `S3_*`. As credenciais só precisam gravar e apagar nesse bucket. Com o armazenamento pela metade, a aplicação não sobe. Sem nenhuma dessas variáveis, ela sobe e o envio de fotos responde 503. O log `Foto nao apagada` indica um arquivo sem uso, que precisa ser apagado à mão.
+Crie um bucket compatível com S3, com leitura pública das fotos, e preencha as variáveis `S3_*`. No Cloudflare R2, use `S3_ENDPOINT=https://<id da conta>.r2.cloudflarestorage.com` e `S3_REGION=auto`, e ligue um domínio próprio ao bucket para `S3_PUBLIC_URL`, porque o endereço `r2.dev` tem limites e não é indicado para produção. As credenciais só precisam gravar e apagar nesse bucket. Com o armazenamento pela metade, a aplicação não sobe. Sem nenhuma dessas variáveis, ela sobe e o envio de fotos responde 503. O log `Foto nao apagada` indica um arquivo sem uso, que precisa ser apagado à mão.
 
 > O protocolo foi testado contra um servidor local, não contra um provedor real. **Teste um envio no provedor escolhido antes de abrir.**
 

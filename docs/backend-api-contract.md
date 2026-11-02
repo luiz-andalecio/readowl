@@ -379,9 +379,27 @@ Dados da própria conta. Exige sessão.
 }
 ```
 
+### Imagens externas
+
+Capas e banners ficam em outros sites, e só valem os domínios de `GET /image-hosts`, que devolve a lista atual. Público. A comparação é exata: um subdomínio de um site permitido não vale. **200**:
+
+```json
+["i.ibb.co", "i.imgur.com", "res.cloudinary.com"]
+```
+
+A foto de perfil é a única imagem que também pode ser enviada como arquivo. Ela pode vir de três lugares: de um arquivo, de um site permitido ou do login com Google. A conta nova usa a foto do Google, que acompanha as mudanças feitas lá. Uma foto escolhida pela pessoa vale mais, e uma foto removida não volta no login seguinte.
+
 ### `PUT /users/me/avatar`
 
-Envia a foto de perfil. O corpo é a própria imagem, sem formulário, com `Content-Type: image/jpeg` ou `image/png`. Até 2 MiB e 300x300 pixels: **recorte no navegador antes de enviar**. A imagem é refeita em JPEG, e transparência vira fundo branco. Limite de 10 por hora.
+Define a foto de perfil, por uma das duas formas abaixo. A resposta é a mesma, e o limite de 10 por hora vale para as duas.
+
+**Imagem hospedada**, com `Content-Type: application/json`, em um dos [sites permitidos](#imagens-externas). **400** `INVALID_AVATAR_URL` fora disso. Não depende do armazenamento, então continua disponível quando o envio de arquivos está fora do ar. O servidor não baixa a imagem: o frontend deve conferir no navegador se ela carrega.
+
+```json
+{ "url": "https://i.imgur.com/minha-foto.jpg" }
+```
+
+**Arquivo**: o corpo é a própria imagem, sem formulário, com `Content-Type: image/jpeg` ou `image/png`. Até 2 MiB e 300x300 pixels: **recorte no navegador antes de enviar**. A imagem é refeita em JPEG, e transparência vira fundo branco.
 
 **200**
 ```json
@@ -390,11 +408,12 @@ Envia a foto de perfil. O corpo é a própria imagem, sem formulário, com `Cont
 
 | Status | `code` | Quando |
 |---|---|---|
+| 400 | `INVALID_AVATAR_URL` | Imagem hospedada fora dos sites permitidos ou sem `https://` |
 | 400 | `INVALID_IMAGE` | O conteúdo não é um JPEG ou PNG válido, mesmo com o tipo certo |
 | 400 | `AVATAR_TOO_LARGE` | Mais de 300 pixels de largura ou altura |
 | 400 | `AVATAR_FILE_TOO_LARGE` | Mais de 2 MiB |
 | 415 | `UNSUPPORTED_MEDIA_TYPE` | Outro `Content-Type` |
-| 503 | `AVATARS_UNAVAILABLE` | Armazenamento não configurado ou fora do ar |
+| 503 | `AVATARS_UNAVAILABLE` | Envio de arquivo com o armazenamento não configurado ou fora do ar |
 
 `avatarUrl` aparece no perfil, na sessão, em `author` no catálogo, na leitura e nos comentários. É `null` sem foto.
 
@@ -617,7 +636,7 @@ Vale o mesmo para capítulos: o slug segue o título. Títulos repetidos dentro 
 | `acronym` | De 2 a 10 letras ou números, sem acentos ou espaços. É salva em maiúsculas |
 | `synopsis` | Até 2000 caracteres, não vazia |
 | `releaseFrequency` | Opcional, até 50 caracteres |
-| `coverUrl` | Opcional, até 1000 caracteres. Endereço `https` de uma imagem em outro site, como Imgur ou ImgBB. Em branco na edição, remove a capa. **400** `INVALID_COVER_URL` fora disso |
+| `coverUrl` | Opcional, até 1000 caracteres. Endereço `https` de uma imagem em um dos [sites permitidos](#imagens-externas). Em branco na edição, remove a capa. **400** `INVALID_COVER_URL` fora disso |
 | `contentRating` | `GENERAL`, o padrão, ou `ADULT`. Com o gênero `Adulto`, a obra fica sempre `ADULT`. Obras adultas não aparecem para visitantes nem no sitemap, e respondem 404 sem sessão |
 | `genreIds` | De 1 a 5 gêneros de `GET /genres` |
 | `tags` | Opcional, até 10 nomes com letras, números, espaços, `_` ou `-`. Tags novas são criadas; maiúsculas não geram duplicatas |
@@ -643,7 +662,7 @@ Vale o mesmo para capítulos: o slug segue o título. Títulos repetidos dentro 
 }
 ```
 
-`status` é `ONGOING`, `COMPLETED` ou `HIATUS`. `publicationState` é `DRAFT`, `PUBLISHED` ou `UNPUBLISHED`. `moderated` é `true` se a obra foi ocultada pela moderação. Mostre isso ao autor, que não consegue publicá-la nesse estado.
+`status` é `ONGOING`, `COMPLETED`, `HIATUS` ou `PAUSED`. `publicationState` é `DRAFT`, `PUBLISHED` ou `UNPUBLISHED`. `moderated` é `true` se a obra foi ocultada pela moderação. Mostre isso ao autor, que não consegue publicá-la nesse estado.
 
 | Status | `code` | Quando |
 |---|---|---|
@@ -720,7 +739,7 @@ Catálogo paginado.
 | `query` | Busca no título e na sinopse, até 100 caracteres. Ignora acentos e maiúsculas, aceita trechos do título e tolera erros de digitação. Também encontra pela sigla exata |
 | `genre` | ID do gênero. Repita o parâmetro para exigir vários |
 | `tag` | Nome da tag. Repita o parâmetro para exigir várias |
-| `status` | `ONGOING`, `COMPLETED` ou `HIATUS` |
+| `status` | `ONGOING`, `COMPLETED`, `HIATUS` ou `PAUSED` |
 | `author` | Username do autor. Use para listar as obras no perfil público |
 | `sort` | `title`, `createdAt`, `lastChapterAt`, `views` ou, em buscas, `relevance`. Com `-` na frente, ordem decrescente |
 | `page`, `size` | Paginação |
@@ -1640,6 +1659,7 @@ Nada disso foi alterado no projeto Angular.
 | SEO | No SSR: `title`, descrição e Open Graph por obra e capítulo, URL canônica e 301 em `BOOK_MOVED` e `CHAPTER_MOVED` |
 | Catálogo | Mostrar `averageRating`, ausente sem avaliações, e `ratingCount` nos cartões |
 | Notificações | Mostrar avisos da moderação, com `message` |
+| Imagens | Limitar `img-src` aos domínios de `GET /image-hosts`, mais o endereço do armazenamento de fotos |
 | Capas | Conferir no navegador o mínimo de 600x800 e a proporção de 3:4, com 2% de tolerância, antes de salvar `coverUrl`. O servidor não baixa a imagem. Mostrar uma capa padrão se ela não carregar, e usar `referrerpolicy="no-referrer"`, porque alguns sites bloqueiam imagens abertas de outros domínios |
 | Foto de perfil | Recortar e reduzir no navegador para no máximo 300x300 antes de enviar |
 | Links do autor | Abrir com `rel="nofollow noopener ugc"`, porque são informados por usuários |

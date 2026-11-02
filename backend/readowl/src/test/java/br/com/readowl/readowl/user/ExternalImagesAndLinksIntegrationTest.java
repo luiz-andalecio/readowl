@@ -143,6 +143,54 @@ class ExternalImagesAndLinksIntegrationTest {
     }
 
     @Test
+    void aHostedImageCanBeThePicture() {
+        assertThat(person.put(AVATAR, body("url", " " + COVER + " ")).json().at("/avatarUrl").asString()).isEqualTo(COVER);
+
+        assertThat(visitor.get("/api/v1/users/" + username()).json().at("/avatarUrl").asString()).isEqualTo(COVER);
+        assertThat(person.delete(AVATAR).status()).isEqualTo(204);
+        assertThat(person.get("/api/v1/users/me").json().at("/avatarUrl").isNull()).isTrue();
+    }
+
+    @Test
+    void switchingFromAnUploadedPictureToAHostedOneDeletesTheFileAndBack() {
+        String uploaded = upload();
+
+        assertThat(person.put(AVATAR, body("url", COVER)).status()).isEqualTo(200);
+        assertThat(storage.holds(keyOf(uploaded))).isFalse();
+
+        String again = upload();
+        assertThat(storage.holds(keyOf(again))).isTrue();
+        assertThat(person.get("/api/v1/users/me").json().at("/avatarUrl").asString()).isEqualTo(again);
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"https://site-desconhecido.example.com/a.jpg", "http://i.imgur.com/a.jpg", "javascript:alert(1)",
+            "https://i.imgur.com.golpe.example.com/a.jpg"})
+    void aHostedPictureOutsideTheAllowedSitesIsRefusedAndKeepsTheCurrentOne(String url) {
+        String current = upload();
+
+        ApiClient.Response refused = person.put(AVATAR, body("url", url));
+
+        assertThat(refused.status()).isEqualTo(400);
+        assertThat(refused.code()).isEqualTo("INVALID_AVATAR_URL");
+        assertThat(person.get("/api/v1/users/me").json().at("/avatarUrl").asString()).isEqualTo(current);
+        assertThat(storage.holds(keyOf(current))).isTrue();
+    }
+
+    @Test
+    void moderationRemovesAHostedPicture() {
+        assertThat(person.put(AVATAR, body("url", COVER)).status()).isEqualTo(200);
+        UUID id = accounts.userId(email);
+        String moderatorEmail = uniqueEmail();
+        accounts.registerVerified(moderatorEmail);
+        jdbc.update("UPDATE users SET role = 'MODERATOR' WHERE email = ?", moderatorEmail);
+
+        assertThat(accounts.loggedIn(moderatorEmail, PASSWORD).post("/api/v1/moderation/users/" + id + "/remove-avatar", body("reason", "Imagem imprópria")).status()).isEqualTo(204);
+
+        assertThat(person.get("/api/v1/users/me").json().at("/avatarUrl").isNull()).isTrue();
+    }
+
+    @Test
     void aPictureAboveTheLimitOrAFakeOneIsRefusedWithoutStoringAnything() {
         assertThat(person.putBytes(AVATAR, png(301), "image/png").code()).isEqualTo("AVATAR_TOO_LARGE");
         assertThat(person.putBytes(AVATAR, "<script>alert(1)</script>".getBytes(), "image/png").code()).isEqualTo("INVALID_IMAGE");
@@ -162,6 +210,15 @@ class ExternalImagesAndLinksIntegrationTest {
         assertThat(failed.code()).isEqualTo("AVATARS_UNAVAILABLE");
         assertThat(person.get("/api/v1/users/me").json().at("/avatarUrl").asString()).isEqualTo(url);
         assertThat(storage.holds(keyOf(url))).isTrue();
+    }
+
+    @Test
+    void aHostedPictureStillWorksWhenTheStorageIsDown() {
+        storage.setFailing(true);
+
+        assertThat(person.put(AVATAR, body("url", COVER)).json().at("/avatarUrl").asString()).isEqualTo(COVER);
+
+        assertThat(person.get("/api/v1/users/me").json().at("/avatarUrl").asString()).isEqualTo(COVER);
     }
 
     @Test
@@ -269,13 +326,32 @@ class ExternalImagesAndLinksIntegrationTest {
     }
 
     @ParameterizedTest
-    @ValueSource(strings = {"http://i.imgur.com/a.jpg", "javascript:alert(1)", "data:image/png;base64,AAAA", "imgur.com/a.jpg",
+    @ValueSource(strings = {"https://site-desconhecido.example.com/a.jpg", "https://i.imgur.com.golpe.example.com/a.jpg",
+            "https://outro.i.imgur.com/a.jpg", "http://i.imgur.com/a.jpg", "javascript:alert(1)", "data:image/png;base64,AAAA", "imgur.com/a.jpg",
             "https://user:senha@imgur.com/a.jpg", "https://127.0.0.1/a.jpg", "https://[::1]/a.jpg"})
     void aCoverOutsideHttpsOrPointingToAnAddressIsRefused(String url) {
         ApiClient.Response refused = person.patch("/api/v1/books/" + books.createBook(person), body("coverUrl", url));
 
         assertThat(refused.status()).isEqualTo(400);
         assertThat(refused.code()).isEqualTo("INVALID_COVER_URL");
+    }
+
+    @Test
+    void theAllowedSitesArePublic() {
+        assertThat(visitor.get("/api/v1/image-hosts").json().toString()).contains("i.imgur.com").contains("i.ibb.co")
+                .contains("res.cloudinary.com").doesNotContain("example.com");
+    }
+
+    @Test
+    void aBookCanBePaused() {
+        String book = books.publishedBook(person);
+
+        assertThat(person.patch("/api/v1/books/" + book, body("status", "PAUSED")).json().at("/status").asString()).isEqualTo("PAUSED");
+
+        JsonNode paused = visitor.get("/api/v1/books?author=" + username() + "&status=PAUSED").json();
+        assertThat(paused.at("/totalElements").asLong()).isOne();
+        assertThat(paused.at("/content/0/status").asString()).isEqualTo("PAUSED");
+        assertThat(visitor.get("/api/v1/books?author=" + username() + "&status=HIATUS").json().at("/totalElements").asLong()).isZero();
     }
 
     @Test

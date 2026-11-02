@@ -14,7 +14,7 @@ import java.util.Set;
 
 /**
  * Sem aceitar os termos vigentes, a conta só lê e cuida de si mesma: aceitar, sair, encerrar sessões, trocar a senha ou o
- * e-mail e excluir a conta.
+ * e-mail, remover a foto e excluir a conta.
  * Atinge quem entrou pelo Google, que não passa pelo formulário de cadastro, e todos quando os termos mudam.
  */
 @Component
@@ -26,6 +26,7 @@ class TermsInterceptor implements HandlerInterceptor {
             "/api/v1/users/me/email");
     private static final String SESSIONS_PATH = "/api/v1/users/me/sessions";
     private static final String ACCOUNT_PATH = "/api/v1/users/me";
+    private static final String AVATAR_PATH = "/api/v1/users/me/avatar";
 
     private final UserService users;
 
@@ -49,6 +50,6 @@ class TermsInterceptor implements HandlerInterceptor {
     private static boolean isExempt(HttpServletRequest request) {
         String path = request.getServletPath();
         return path.startsWith(AUTH_PATH) || ACCOUNT_CARE_PATHS.contains(path) || path.startsWith(SESSIONS_PATH)
-                || (path.equals(ACCOUNT_PATH) && "DELETE".equals(request.getMethod()));
+                || ((path.equals(ACCOUNT_PATH) || path.equals(AVATAR_PATH)) && "DELETE".equals(request.getMethod()));
     }
 }

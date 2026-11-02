@@ -204,7 +204,7 @@ class QueryCountIntegrationTest {
         worker.processEvents();
         ApiClient admin = withRole("ADMIN");
         for (int i = 0; i < ITEMS; i++) {
-            admin.post("/api/v1/admin/banners", body("name", "Banner " + i, "imageUrl", "https://cdn.example.com/a.png",
+            admin.post("/api/v1/admin/banners", body("name", "Banner " + i, "imageUrl", "https://i.imgur.com/a.png",
                     "linkUrl", "https://readowl.example.com", "position", i, "enabled", true));
             newUser();
         }

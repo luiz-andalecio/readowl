@@ -87,6 +87,19 @@ class UserController {
         return avatars.upload(principal.id(), file);
     }
 
+    /**
+     * O mesmo recurso, com uma imagem hospedada em outro site no lugar do arquivo.
+     */
+    @PutMapping(value = "/me/avatar", consumes = MediaType.APPLICATION_JSON_VALUE)
+    @RateLimited(RateLimitPolicy.AVATAR_ACCOUNT)
+    AvatarService.AvatarResponse useHostedAvatar(@AuthenticationPrincipal SessionUser principal,
+                                                 @Valid @RequestBody HostedAvatarRequest body) {
+        return avatars.useHostedImage(principal.id(), body.url());
+    }
+
+    record HostedAvatarRequest(@NotBlank @Size(max = 1000) String url) {
+    }
+
     @DeleteMapping("/me/avatar")
     @ResponseStatus(HttpStatus.NO_CONTENT)
     void removeAvatar(@AuthenticationPrincipal SessionUser principal) {

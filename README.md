@@ -355,7 +355,7 @@ Checks will apply to endpoints, services, queries, downloads, and asynchronous t
 
 ## 🖼️ Images and Uploads
 
-Covers and banners are hosted on external sites, such as Imgur or ImgBB, and only their HTTPS addresses are stored. The server never downloads them. Only profile pictures are uploaded, to S3-compatible object storage, up to 300x300 pixels.
+Covers and banners are hosted on external sites from an allowed list, such as Imgur or ImgBB, and only their HTTPS addresses are stored. The server never downloads them. Only profile pictures are uploaded, to S3-compatible object storage, up to 300x300 pixels, come from an allowed external site, or come from the Google account used to sign in.
 
 - File size, dimension, and pixel-count limits.
 - Actual file content verification beyond the extension and declared MIME type.

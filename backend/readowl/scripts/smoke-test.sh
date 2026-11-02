@@ -186,7 +186,7 @@ check 'perfil' '200' "$STATUS"
 request GET /api/v1/auth/csrf '' "$SESSION"
 TOKEN="$(cookie_value __Host-XSRF-TOKEN)"
 BOTH="$SESSION; __Host-XSRF-TOKEN=$TOKEN"
-request POST /api/v1/admin/banners '{"name":"Teste","imageUrl":"https://cdn.example.com/a.png","linkUrl":"https://readowl.test","position":1,"enabled":true}' "$BOTH" "$TOKEN"
+request POST /api/v1/admin/banners '{"name":"Teste","imageUrl":"https://i.imgur.com/a.png","linkUrl":"https://readowl.test","position":1,"enabled":true}' "$BOTH" "$TOKEN"
 check 'banner criado' '201' "$STATUS"
 check 'acao na auditoria' 'POST /api/v1/admin/banners|SUCCESS' "$(sql 'SELECT action, outcome FROM audit_log')"
 

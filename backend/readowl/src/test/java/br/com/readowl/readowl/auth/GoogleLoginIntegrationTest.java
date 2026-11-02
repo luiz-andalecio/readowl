@@ -114,6 +114,95 @@ class GoogleLoginIntegrationTest {
         assertThat(sessionTimeout(client)).isEqualTo(TWELVE_HOURS_IN_SECONDS);
     }
 
+    private static final String GOOGLE_PICTURE = "https://lh3.googleusercontent.com/a/foto";
+
+    private static FakeGoogle.Person withPicture(String email, String subject, String picture) {
+        return new FakeGoogle.Person(subject, email, true, "Pessoa", picture);
+    }
+
+    private String avatarOf(ApiClient client) {
+        return client.get("/api/v1/users/me").json().at("/avatarUrl").asString(null);
+    }
+
+    @Test
+    void theGooglePictureBecomesTheProfilePictureAndFollowsChanges() {
+        String email = uniqueEmail();
+        String subject = UUID.randomUUID().toString();
+        ApiClient client = accounts.client();
+
+        signIn(client, withPicture(email, subject, GOOGLE_PICTURE));
+        assertThat(avatarOf(client)).isEqualTo(GOOGLE_PICTURE);
+
+        ApiClient again = accounts.client();
+        signIn(again, withPicture(email, subject, GOOGLE_PICTURE + "-nova"));
+        assertThat(avatarOf(again)).isEqualTo(GOOGLE_PICTURE + "-nova");
+    }
+
+    @Test
+    void anUploadedPictureIsNotReplacedByTheGoogleOne() throws Exception {
+        String email = uniqueEmail();
+        String subject = UUID.randomUUID().toString();
+        ApiClient client = accounts.client();
+        signIn(client, withPicture(email, subject, GOOGLE_PICTURE));
+        jdbc.update("UPDATE users SET avatar_key = 'avatars/x.jpg', avatar_url = 'https://cdn.readowl.test/avatars/x.jpg', avatar_from_login = false WHERE email = ?", email);
+
+        ApiClient again = accounts.client();
+        signIn(again, withPicture(email, subject, GOOGLE_PICTURE));
+
+        assertThat(avatarOf(again)).isEqualTo("https://cdn.readowl.test/avatars/x.jpg");
+    }
+
+    @Test
+    void aHostedImageReplacesTheGooglePictureAndStaysAfterTheNextLogin() {
+        String hosted = "https://i.imgur.com/minha-foto.jpg";
+        String email = uniqueEmail();
+        String subject = UUID.randomUUID().toString();
+        ApiClient client = accounts.client();
+        signIn(client, withPicture(email, subject, GOOGLE_PICTURE));
+        assertThat(client.post("/api/v1/users/me/terms", body("termsVersion", AccountFixtures.TERMS_VERSION, "ageConfirmed", true)).status()).isEqualTo(204);
+
+        assertThat(client.put("/api/v1/users/me/avatar", body("url", hosted)).json().at("/avatarUrl").asString()).isEqualTo(hosted);
+
+        ApiClient again = accounts.client();
+        signIn(again, withPicture(email, subject, GOOGLE_PICTURE + "-nova"));
+        assertThat(avatarOf(again)).isEqualTo(hosted);
+    }
+
+    @Test
+    void aRemovedPictureDoesNotComeBackInTheNextLogin() {
+        String email = uniqueEmail();
+        String subject = UUID.randomUUID().toString();
+        ApiClient client = accounts.client();
+        signIn(client, withPicture(email, subject, GOOGLE_PICTURE));
+        assertThat(client.delete("/api/v1/users/me/avatar").status()).isEqualTo(204);
+
+        ApiClient again = accounts.client();
+        signIn(again, withPicture(email, subject, GOOGLE_PICTURE));
+
+        assertThat(avatarOf(again)).isNull();
+    }
+
+    @Test
+    void aPictureFromAnotherSiteIsIgnored() {
+        ApiClient client = accounts.client();
+
+        signIn(client, withPicture(uniqueEmail(), UUID.randomUUID().toString(), "https://rastreador.example.com/foto"));
+
+        assertThat(avatarOf(client)).isNull();
+    }
+
+    @Test
+    void linkingGoogleUsesThePictureOnlyWithoutOne() {
+        String email = uniqueEmail();
+        accounts.registerVerified(email);
+        ApiClient client = accounts.loggedIn(email, PASSWORD);
+        assertThat(client.post(LINK, body("password", PASSWORD)).status()).isEqualTo(204);
+
+        signIn(client, withPicture(uniqueEmail(), UUID.randomUUID().toString(), GOOGLE_PICTURE));
+
+        assertThat(avatarOf(client)).isEqualTo(GOOGLE_PICTURE);
+    }
+
     private void linkGoogleTo(String email) {
         jdbc.update("""
                 INSERT INTO accounts (id, user_id, provider, provider_account_id, created_at)

@@ -3,6 +3,7 @@ package br.com.readowl.readowl.banner.application;
 import br.com.readowl.readowl.banner.domain.Banner;
 import br.com.readowl.readowl.banner.infrastructure.BannerRepository;
 import br.com.readowl.readowl.shared.api.PageResponse;
+import br.com.readowl.readowl.media.application.ExternalImages;
 import br.com.readowl.readowl.shared.exception.ApiException;
 import br.com.readowl.readowl.shared.text.ExternalUrls;
 import org.springframework.data.domain.Pageable;
@@ -22,9 +23,11 @@ import java.util.UUID;
 public class BannerService {
 
     private final BannerRepository banners;
+    private final ExternalImages images;
 
-    BannerService(BannerRepository banners) {
+    BannerService(BannerRepository banners, ExternalImages images) {
         this.banners = banners;
+        this.images = images;
     }
 
     public record BannerData(String name, String imageUrl, String linkUrl, int position, boolean enabled,
@@ -92,8 +95,10 @@ public class BannerService {
         return banners.findById(id).orElseThrow(() -> ApiException.notFound("BANNER_NOT_FOUND", "Banner não encontrado."));
     }
 
-    private static void validate(BannerData data) {
-        requireHttps(data.imageUrl());
+    private void validate(BannerData data) {
+        if (!images.isAllowed(data.imageUrl())) {
+            throw ApiException.badRequest("INVALID_BANNER_URL", "Use uma imagem com https://, em um dos sites permitidos.");
+        }
         requireHttps(data.linkUrl());
         if (data.activeFrom() != null && data.activeUntil() != null && !data.activeUntil().isAfter(data.activeFrom())) {
             throw ApiException.badRequest("INVALID_BANNER_PERIOD", "O fim do período deve ser depois do início.");

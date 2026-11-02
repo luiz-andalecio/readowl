@@ -38,7 +38,11 @@ public final class FakeGoogle {
     private volatile String nonce;
     private volatile String tokenAudience = CLIENT_ID;
 
-    public record Person(String subject, String email, boolean emailVerified, String name) {
+    public record Person(String subject, String email, boolean emailVerified, String name, String picture) {
+
+        public Person(String subject, String email, boolean emailVerified, String name) {
+            this(subject, email, emailVerified, name, null);
+        }
     }
 
     public FakeGoogle() {
@@ -116,6 +120,7 @@ public final class FakeGoogle {
                 .claim("email", current.email())
                 .claim("email_verified", current.emailVerified())
                 .claim("name", current.name())
+                .claim("picture", current.picture())
                 .build();
         SignedJWT jwt = new SignedJWT(new JWSHeader.Builder(JWSAlgorithm.RS256).keyID(key.getKeyID()).build(), claims);
         try {

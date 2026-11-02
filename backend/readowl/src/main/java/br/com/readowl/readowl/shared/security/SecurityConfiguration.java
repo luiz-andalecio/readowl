@@ -47,7 +47,8 @@ class SecurityConfiguration {
             "/api/v1/chapters/{chapterId}/comments",
             "/api/v1/chapters/{chapterId}/reactions",
             "/api/v1/comments/{commentId}/replies",
-            "/api/v1/banners"};
+            "/api/v1/banners",
+            "/api/v1/image-hosts"};
 
     @Bean
     SecurityFilterChain securityFilterChain(HttpSecurity http, ProblemSecurityHandler problemHandler,

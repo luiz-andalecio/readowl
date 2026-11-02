@@ -46,7 +46,7 @@ class GoogleLoginHandler implements AuthenticationSuccessHandler, Authentication
                                         Authentication authentication) throws IOException {
         OidcUser oidcUser = (OidcUser) authentication.getPrincipal();
         GoogleIdentity identity = new GoogleIdentity(oidcUser.getSubject(), oidcUser.getEmail(),
-                Boolean.TRUE.equals(oidcUser.getEmailVerified()), oidcUser.getFullName());
+                Boolean.TRUE.equals(oidcUser.getEmailVerified()), oidcUser.getFullName(), oidcUser.getPicture());
         Optional<UUID> linkingUser = GoogleLinkIntent.take(request);
 
         if (linkingUser.isPresent()) {

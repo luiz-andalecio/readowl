@@ -5,6 +5,7 @@ import br.com.readowl.readowl.book.domain.BookStatus;
 import br.com.readowl.readowl.book.domain.ContentRating;
 import br.com.readowl.readowl.book.infrastructure.BookRepository;
 import br.com.readowl.readowl.book.infrastructure.BookSlugHistory;
+import br.com.readowl.readowl.media.application.ExternalImages;
 import br.com.readowl.readowl.genre.application.TaxonomyService;
 import br.com.readowl.readowl.shared.api.PageResponse;
 import br.com.readowl.readowl.shared.audit.AuditTrail;
@@ -12,7 +13,6 @@ import br.com.readowl.readowl.shared.config.ReadowlProperties;
 import br.com.readowl.readowl.shared.exception.ApiException;
 import br.com.readowl.readowl.shared.ratelimit.RateLimitPolicy;
 import br.com.readowl.readowl.shared.ratelimit.RateLimiter;
-import br.com.readowl.readowl.shared.text.ExternalUrls;
 import br.com.readowl.readowl.shared.text.Texts;
 import br.com.readowl.readowl.user.application.SessionUser;
 import br.com.readowl.readowl.user.application.UserService;
@@ -40,10 +40,12 @@ public class BookService {
     private final AuditTrail audit;
     private final ReadowlProperties.Limits limits;
     private final BookSlugHistory slugHistory;
+    private final ExternalImages images;
 
     BookService(BookRepository books, BookAccess access, UserService users, TaxonomyService taxonomy,
                 TransactionOperations transaction, RateLimiter rateLimiter, AuditTrail audit,
-                ReadowlProperties properties, BookSlugHistory slugHistory) {
+                ReadowlProperties properties, BookSlugHistory slugHistory, ExternalImages images) {
+        this.images = images;
         this.slugHistory = slugHistory;
         this.books = books;
         this.access = access;
@@ -132,12 +134,12 @@ public class BookService {
     }
 
     /**
-     * A capa fica em outro site. Em branco, é removida.
+     * A capa fica em um dos sites permitidos. Em branco, é removida.
      */
-    private static String cover(String url) {
+    private String cover(String url) {
         String cover = Texts.blankToNull(url);
-        if (cover != null && !ExternalUrls.isHttps(cover)) {
-            throw ApiException.badRequest("INVALID_COVER_URL", "Use o endereço completo da imagem, com https://.");
+        if (cover != null && !images.isAllowed(cover)) {
+            throw ApiException.badRequest("INVALID_COVER_URL", "Use o endereço completo da imagem, com https://, em um dos sites permitidos.");
         }
         return cover == null ? null : cover.trim();
     }

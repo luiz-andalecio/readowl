@@ -1,6 +1,7 @@
 package br.com.readowl.readowl.user.application;
 
 import br.com.readowl.readowl.media.application.AvatarImages;
+import br.com.readowl.readowl.media.application.ExternalImages;
 import br.com.readowl.readowl.media.application.ObjectStorage;
 import br.com.readowl.readowl.shared.config.ReadowlProperties;
 import br.com.readowl.readowl.shared.exception.ApiException;
@@ -31,9 +32,11 @@ public class AvatarService {
     private final ReadowlProperties properties;
     private final ApplicationEventPublisher events;
     private final TransactionOperations transaction;
+    private final ExternalImages images;
 
     AvatarService(UserService users, ObjectProvider<ObjectStorage> storage, ReadowlProperties properties,
-                  ApplicationEventPublisher events, TransactionOperations transaction) {
+                  ApplicationEventPublisher events, TransactionOperations transaction, ExternalImages images) {
+        this.images = images;
         this.users = users;
         this.storage = storage;
         this.properties = properties;
@@ -71,13 +74,29 @@ public class AvatarService {
     }
 
     /**
-     * Junta-se à transação de quem chama, como a moderação e a exclusão da conta.
+     * Foto hospedada em um dos sites permitidos. Substitui a enviada, cujo arquivo é apagado, e a do login, que não volta
+     * no login seguinte.
+     */
+    @Transactional
+    public AvatarResponse useHostedImage(UUID userId, String url) {
+        String cleaned = url.trim();
+        if (!images.isAllowed(cleaned)) {
+            throw ApiException.badRequest("INVALID_AVATAR_URL", "Use o endereço completo da imagem, com https://, em um dos sites permitidos.");
+        }
+        release(users.changeAvatar(userId, null, cleaned));
+        return new AvatarResponse(cleaned);
+    }
+
+    /**
+     * Junta-se à transação de quem chama, como a moderação e a exclusão da conta. Uma foto vinda do login não tem arquivo aqui.
+     *
+     * @return se a conta tinha foto
      */
     @Transactional
     public boolean remove(UUID userId) {
-        String previous = users.changeAvatar(userId, null, null);
-        release(previous);
-        return previous != null;
+        boolean hadPicture = users.requireById(userId).getAvatarUrl() != null;
+        release(users.changeAvatar(userId, null, null));
+        return hadPicture;
     }
 
     private void release(String key) {

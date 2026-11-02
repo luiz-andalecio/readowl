@@ -56,7 +56,7 @@ class BannerIntegrationTest {
     }
 
     private static Map<String, Object> banner(String name, int position) {
-        return body("name", name, "imageUrl", "https://cdn.example.com/a.png", "linkUrl", "https://readowl.example.com/obras/a",
+        return body("name", name, "imageUrl", "https://i.imgur.com/a.png", "linkUrl", "https://readowl.example.com/obras/a",
                 "position", position, "enabled", true);
     }
 
@@ -122,6 +122,15 @@ class BannerIntegrationTest {
 
         assertThat(activeNames()).containsExactly("Primeiro", "Segundo");
         assertThat(admin.get(ADMIN).json().at("/totalElements").asLong()).isEqualTo(5);
+    }
+
+    @Test
+    void anImageOutsideTheAllowedSitesIsRefusedButALinkCanGoAnywhere() {
+        ApiClient admin = withRole("ADMIN");
+        String outside = "https://site-desconhecido.example.com/a.png";
+
+        assertThat(admin.post(ADMIN, with(banner("X", 1), "imageUrl", outside)).code()).isEqualTo("INVALID_BANNER_URL");
+        assertThat(admin.post(ADMIN, with(banner("X", 1), "linkUrl", outside)).status()).isEqualTo(201);
     }
 
     @Test

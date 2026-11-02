@@ -2,6 +2,7 @@ package br.com.readowl.readowl.auth.application;
 
 import br.com.readowl.readowl.auth.domain.Account;
 import br.com.readowl.readowl.auth.infrastructure.AccountRepository;
+import br.com.readowl.readowl.media.application.ExternalImages;
 import br.com.readowl.readowl.shared.audit.SecurityEvents;
 import br.com.readowl.readowl.shared.exception.ApiException;
 import br.com.readowl.readowl.shared.ratelimit.RateLimitPolicy;
@@ -37,10 +38,12 @@ public class GoogleAccountService {
     private final ObjectProvider<ClientRegistrationRepository> googleRegistration;
     private final AccountMails mails;
     private final SecurityEvents events;
+    private final ExternalImages images;
 
     GoogleAccountService(UserService users, AccountRepository accounts, PasswordEncoder passwordEncoder,
                          RateLimiter rateLimiter, ObjectProvider<ClientRegistrationRepository> googleRegistration,
-                         AccountMails mails, SecurityEvents events) {
+                         AccountMails mails, SecurityEvents events, ExternalImages images) {
+        this.images = images;
         this.mails = mails;
         this.events = events;
         this.users = users;
@@ -54,6 +57,7 @@ public class GoogleAccountService {
     public SessionUser login(GoogleIdentity identity) {
         Optional<Account> linked = accounts.findByProviderAndProviderAccountId(PROVIDER, identity.subject());
         if (linked.isPresent()) {
+            refreshPicture(linked.get().getUser(), identity);
             SessionUser user = activeSessionUser(linked.get().getUser());
             events.record(SecurityEvents.Event.GOOGLE_LOGIN_SUCCEEDED, user.id());
             return user;
@@ -66,6 +70,7 @@ public class GoogleAccountService {
                     "Já existe uma conta com este e-mail. Entre com a senha e vincule o Google.");
         }
         User user = users.createVerified(displayName(identity), identity.email(), Instant.now());
+        usePicture(user, identity);
         accounts.saveAndFlush(new Account(user, PROVIDER, identity.subject()));
         events.record(SecurityEvents.Event.GOOGLE_LOGIN_SUCCEEDED, user.getId());
         return activeSessionUser(user);
@@ -102,6 +107,9 @@ public class GoogleAccountService {
                 throw ApiException.conflict("GOOGLE_ALREADY_LINKED", "Esta conta já está vinculada ao Google.");
             }
             accounts.saveAndFlush(new Account(user, PROVIDER, identity.subject()));
+            if (user.getAvatarUrl() == null) {
+                usePicture(user, identity);
+            }
             mails.request(AccountMailType.GOOGLE_LINKED, user.getEmail());
             events.record(SecurityEvents.Event.GOOGLE_LINKED, userId);
         }
@@ -111,6 +119,22 @@ public class GoogleAccountService {
     @Transactional(readOnly = true)
     public SessionUser sessionUser(UUID userId) {
         return activeSessionUser(users.requireById(userId));
+    }
+
+    /**
+     * Acompanha a foto do Google só de quem a está usando. Uma foto enviada ou hospedada vale mais, e quem removeu a foto, ou
+     * teve a foto removida pela moderação, não a recebe de volta no login seguinte.
+     */
+    private void refreshPicture(User user, GoogleIdentity identity) {
+        if (user.isAvatarFromLogin()) {
+            usePicture(user, identity);
+        }
+    }
+
+    private void usePicture(User user, GoogleIdentity identity) {
+        if (identity.picture() != null && images.isAllowed(identity.picture())) {
+            user.useLoginPicture(identity.picture());
+        }
     }
 
     private static SessionUser activeSessionUser(User user) {
